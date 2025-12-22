@@ -27,12 +27,22 @@ export declare const shallowEquals: <T>(a: T, b: T) => boolean;
 /**
  * Create a reactive signal
  *
+ * For objects and arrays, the signal is deeply reactive - mutations at any
+ * depth will trigger effects.
+ *
  * @example
  * ```ts
  * const count = signal(0)
  * console.log(count.value) // 0
  * count.value = 1
  * console.log(count.value) // 1
+ *
+ * // Deep reactivity for objects/arrays
+ * const user = signal({ name: 'John', address: { city: 'NYC' } })
+ * user.value.address.city = 'LA' // Triggers effects!
+ *
+ * const items = signal([[1, 2], [3, 4]])
+ * items.value[0][1] = 99 // Triggers effects!
  * ```
  */
 export declare function signal<T>(initial: T, options?: SignalOptions<T>): WritableSignal<T>;

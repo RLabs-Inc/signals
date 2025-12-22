@@ -79,14 +79,22 @@ function signal(initial, options) {
     reactions: new Set,
     equals: options?.equals ?? defaultEquals
   };
+  let proxyCache = null;
   return {
     get value() {
       track(internal);
+      if (internal.v !== null && typeof internal.v === "object") {
+        if (!proxyCache) {
+          proxyCache = createDeepReactiveForSignal(internal.v, internal);
+        }
+        return proxyCache;
+      }
       return internal.v;
     },
     set value(newValue) {
       if (!internal.equals(internal.v, newValue)) {
         internal.v = newValue;
+        proxyCache = null;
         trigger(internal);
       }
     }
@@ -329,6 +337,101 @@ function createDeepReactive(target) {
   return proxy;
 }
 var proxyToRaw = new WeakMap;
+var signalProxyCache = new WeakMap;
+function createDeepReactiveForSignal(target, parentSignal) {
+  const existingProxy = signalProxyCache.get(target);
+  if (existingProxy)
+    return existingProxy;
+  const propSignals = new Map;
+  const getPropSignal = (prop) => {
+    let sig = propSignals.get(prop);
+    if (!sig) {
+      sig = {
+        v: target[prop],
+        reactions: new Set,
+        equals: defaultEquals
+      };
+      propSignals.set(prop, sig);
+    }
+    return sig;
+  };
+  const internal = {
+    v: target,
+    reactions: new Set,
+    equals: defaultEquals
+  };
+  const proxy = new Proxy(target, {
+    get(target2, prop, receiver) {
+      if (prop === REACTIVE_MARKER)
+        return true;
+      const value = Reflect.get(target2, prop, receiver);
+      if (Array.isArray(target2) && typeof value === "function") {
+        track(internal);
+        return value.bind(proxy);
+      }
+      const sig = getPropSignal(prop);
+      track(sig);
+      if (value !== null && typeof value === "object") {
+        const proto = Object.getPrototypeOf(value);
+        if (proto === Object.prototype || proto === Array.prototype || proto === null) {
+          if (!value[REACTIVE_MARKER]) {
+            return createDeepReactiveForSignal(value, parentSignal);
+          }
+        }
+      }
+      return value;
+    },
+    set(target2, prop, value, receiver) {
+      const oldValue = target2[prop];
+      const rawValue = value?.[REACTIVE_MARKER] ? proxyToRaw.get(value) ?? value : value;
+      if (Object.is(oldValue, rawValue))
+        return true;
+      const result = Reflect.set(target2, prop, rawValue, receiver);
+      if (result) {
+        batch(() => {
+          const sig = getPropSignal(prop);
+          sig.v = rawValue;
+          trigger(sig);
+          trigger(parentSignal);
+          if (Array.isArray(target2)) {
+            internal.v = target2;
+            trigger(internal);
+          }
+        });
+      }
+      return result;
+    },
+    deleteProperty(target2, prop) {
+      const hadKey = prop in target2;
+      const result = Reflect.deleteProperty(target2, prop);
+      if (result && hadKey) {
+        batch(() => {
+          const sig = propSignals.get(prop);
+          if (sig) {
+            sig.v = undefined;
+            trigger(sig);
+          }
+          trigger(parentSignal);
+          trigger(internal);
+        });
+      }
+      return result;
+    },
+    has(target2, prop) {
+      if (prop === REACTIVE_MARKER)
+        return true;
+      track(internal);
+      return Reflect.has(target2, prop);
+    },
+    ownKeys(target2) {
+      track(internal);
+      return Reflect.ownKeys(target2);
+    }
+  });
+  signalProxyCache.set(target, proxy);
+  proxyToRaw.set(proxy, target);
+  return proxy;
+}
 function toRaw(proxy) {
   if (proxy && typeof proxy === "object" && proxy[REACTIVE_MARKER]) {
     return proxyToRaw.get(proxy) ?? proxy;

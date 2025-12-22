@@ -1,6 +1,6 @@
 {
   "name": "@rlabs-inc/signals",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ultra-lightweight fine-grained reactivity for TypeScript. Signals, effects, derived values, and reactive collections with deep reactivity support.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

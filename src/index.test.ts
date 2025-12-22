@@ -61,6 +61,113 @@ describe('signal', () => {
     obj.value = { x: 2 } // Different x value
     expect(runs).toBe(2)
   })
+
+  test('is deeply reactive for objects', () => {
+    const user = signal({ name: 'John', address: { city: 'NYC' } })
+    let runs = 0
+    let observedCity = ''
+
+    effect(() => {
+      observedCity = user.value.address.city
+      runs++
+    })
+
+    expect(runs).toBe(1)
+    expect(observedCity).toBe('NYC')
+
+    user.value.address.city = 'LA'
+    expect(runs).toBe(2)
+    expect(observedCity).toBe('LA')
+  })
+
+  test('is deeply reactive for nested arrays', () => {
+    const data = signal([[1, 2], [3, 4]])
+    let runs = 0
+    let observed = 0
+
+    effect(() => {
+      observed = data.value[0][1]
+      runs++
+    })
+
+    expect(runs).toBe(1)
+    expect(observed).toBe(2)
+
+    data.value[0][1] = 99
+    expect(runs).toBe(2)
+    expect(observed).toBe(99)
+  })
+
+  test('is deeply reactive for arrays of objects', () => {
+    const items = signal([
+      { name: 'A', tags: ['x', 'y'] },
+      { name: 'B', tags: ['z'] },
+    ])
+    let runs = 0
+
+    effect(() => {
+      items.value[0].tags[0]
+      runs++
+    })
+
+    expect(runs).toBe(1)
+
+    items.value[0].tags[0] = 'modified'
+    expect(runs).toBe(2)
+  })
+
+  test('deeply reactive signal with push on nested arrays', () => {
+    const data = signal({ items: [1, 2, 3] })
+    let runs = 0
+    let length = 0
+
+    effect(() => {
+      length = data.value.items.length
+      runs++
+    })
+
+    expect(runs).toBe(1)
+    expect(length).toBe(3)
+
+    data.value.items.push(4)
+    expect(runs).toBe(2)
+    expect(length).toBe(4)
+  })
+
+  test('nightmare deep nesting test', () => {
+    const nightmare = signal({
+      level1: [
+        {
+          level2: [
+            [
+              {
+                level3: {
+                  items: [
+                    { nested: [['a', 'b'], ['c', 'd'], ['e', 'f']] }
+                  ]
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    })
+
+    let runs = 0
+    let observed = ''
+
+    effect(() => {
+      observed = nightmare.value.level1[0].level2[0][0].level3.items[0].nested[2][1]
+      runs++
+    })
+
+    expect(runs).toBe(1)
+    expect(observed).toBe('f')
+
+    nightmare.value.level1[0].level2[0][0].level3.items[0].nested[2][1] = 'MUTATED'
+    expect(runs).toBe(2)
+    expect(observed).toBe('MUTATED')
+  })
 })
 
 describe('effect', () => {

@@ -116,12 +116,22 @@ export const shallowEquals = <T>(a: T, b: T): boolean => {
 /**
  * Create a reactive signal
  *
+ * For objects and arrays, the signal is deeply reactive - mutations at any
+ * depth will trigger effects.
+ *
  * @example
  * ```ts
  * const count = signal(0)
  * console.log(count.value) // 0
  * count.value = 1
  * console.log(count.value) // 1
+ *
+ * // Deep reactivity for objects/arrays
+ * const user = signal({ name: 'John', address: { city: 'NYC' } })
+ * user.value.address.city = 'LA' // Triggers effects!
+ *
+ * const items = signal([[1, 2], [3, 4]])
+ * items.value[0][1] = 99 // Triggers effects!
  * ```
  */
 export function signal<T>(initial: T, options?: SignalOptions<T>): WritableSignal<T> {
@@ -131,14 +141,27 @@ export function signal<T>(initial: T, options?: SignalOptions<T>): WritableSigna
     equals: options?.equals ?? defaultEquals,
   }
 
+  // Cache for deep reactive proxy (only used for objects/arrays)
+  let proxyCache: T | null = null
+
   return {
     get value(): T {
       track(internal)
+
+      // For objects/arrays, return a deep reactive proxy
+      if (internal.v !== null && typeof internal.v === 'object') {
+        if (!proxyCache) {
+          proxyCache = createDeepReactiveForSignal(internal.v as object, internal) as T
+        }
+        return proxyCache
+      }
+
       return internal.v
     },
     set value(newValue: T) {
       if (!internal.equals(internal.v, newValue)) {
         internal.v = newValue
+        proxyCache = null // Invalidate proxy cache on full replacement
         trigger(internal)
       }
     },
@@ -578,6 +601,140 @@ function createDeepReactive<T extends object>(target: T): T {
 
 /** Map from proxy back to raw object */
 const proxyToRaw = new WeakMap<object, object>()
+
+/** Map from signal-owned proxies to their parent signal (for triggering) */
+const signalProxyCache = new WeakMap<object, object>()
+
+/**
+ * Create a deeply reactive proxy that triggers a parent signal on mutation
+ * Used by signal() for deep reactivity on objects/arrays
+ */
+function createDeepReactiveForSignal<T extends object>(target: T, parentSignal: InternalSignal<any>): T {
+  // Return existing proxy if already created for this signal
+  const existingProxy = signalProxyCache.get(target)
+  if (existingProxy) return existingProxy as T
+
+  // Create property signals for fine-grained tracking
+  const propSignals = new Map<string | symbol, InternalSignal<any>>()
+
+  const getPropSignal = (prop: string | symbol): InternalSignal<any> => {
+    let sig = propSignals.get(prop)
+    if (!sig) {
+      sig = {
+        v: (target as any)[prop],
+        reactions: new Set(),
+        equals: defaultEquals,
+      }
+      propSignals.set(prop, sig)
+    }
+    return sig
+  }
+
+  // Internal signal for array/iteration tracking
+  const internal: InternalSignal<T> = {
+    v: target,
+    reactions: new Set(),
+    equals: defaultEquals,
+  }
+
+  const proxy = new Proxy(target, {
+    get(target, prop, receiver) {
+      if (prop === REACTIVE_MARKER) return true
+
+      const value = Reflect.get(target, prop, receiver)
+
+      // For array methods, bind them to the proxy and track
+      if (Array.isArray(target) && typeof value === 'function') {
+        track(internal)
+        return value.bind(proxy)
+      }
+
+      // Track access to this specific property (fine-grained)
+      const sig = getPropSignal(prop)
+      track(sig)
+
+      // Make nested objects/arrays deeply reactive
+      if (value !== null && typeof value === 'object') {
+        const proto = Object.getPrototypeOf(value)
+        if (proto === Object.prototype || proto === Array.prototype || proto === null) {
+          if (!(value as any)[REACTIVE_MARKER]) {
+            return createDeepReactiveForSignal(value, parentSignal)
+          }
+        }
+      }
+
+      return value
+    },
+
+    set(target, prop, value, receiver) {
+      const oldValue = (target as any)[prop]
+
+      // Unwrap reactive values
+      const rawValue = (value as any)?.[REACTIVE_MARKER] ? proxyToRaw.get(value) ?? value : value
+
+      if (Object.is(oldValue, rawValue)) return true
+
+      const result = Reflect.set(target, prop, rawValue, receiver)
+
+      if (result) {
+        // Batch all triggers together so effects only run once
+        batch(() => {
+          // Trigger property signal
+          const sig = getPropSignal(prop)
+          sig.v = rawValue
+          trigger(sig)
+
+          // Always trigger parent signal on any mutation
+          trigger(parentSignal)
+
+          // For arrays, also trigger internal signal
+          if (Array.isArray(target)) {
+            internal.v = target as any
+            trigger(internal)
+          }
+        })
+      }
+
+      return result
+    },
+
+    deleteProperty(target, prop) {
+      const hadKey = prop in target
+      const result = Reflect.deleteProperty(target, prop)
+
+      if (result && hadKey) {
+        batch(() => {
+          const sig = propSignals.get(prop)
+          if (sig) {
+            sig.v = undefined
+            trigger(sig)
+          }
+          trigger(parentSignal)
+          trigger(internal)
+        })
+      }
+
+      return result
+    },
+
+    has(target, prop) {
+      if (prop === REACTIVE_MARKER) return true
+      track(internal)
+      return Reflect.has(target, prop)
+    },
+
+    ownKeys(target) {
+      track(internal)
+      return Reflect.ownKeys(target)
+    },
+  })
+
+  // Store in cache
+  signalProxyCache.set(target, proxy)
+  proxyToRaw.set(proxy, target)
+
+  return proxy as T
+}
 
 /**
  * Get the raw (non-reactive) version of a reactive object
