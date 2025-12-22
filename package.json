@@ -1,0 +1,49 @@
+{
+  "name": "@rlabs-inc/signals",
+  "version": "0.1.0",
+  "description": "Ultra-lightweight fine-grained reactivity for TypeScript. Signals, effects, derived values, and reactive collections with deep reactivity support.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outfile dist/index.mjs --target node --format esm && bun build src/index.ts --outfile dist/index.js --target node --format cjs && bun run build:types",
+    "build:types": "tsc --emitDeclarationOnly --declaration --outDir dist",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "signals",
+    "reactivity",
+    "reactive",
+    "fine-grained",
+    "proxy",
+    "state",
+    "effect",
+    "derived",
+    "computed",
+    "observable",
+    "typescript"
+  ],
+  "author": "RLabs Inc.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rlabs-inc/signals"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
