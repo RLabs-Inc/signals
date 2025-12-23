@@ -98,7 +98,7 @@ export function updateDerived<T>(derived: Derived<T>): void {
   const value = executeDerived(derived)
 
   // Only trigger reactions if value actually changed
-  if (!derived.equals.call(derived, value)) {
+  if (!derived.equals(derived.v, value)) {
     derived.v = value
     derived.wv = incrementWriteVersion()
   }

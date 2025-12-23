@@ -3,7 +3,7 @@
 // Based on Svelte 5's equality checking
 // ============================================================================
 
-import type { Source, Equals } from '../core/types.js'
+import type { Equals } from '../core/types.js'
 
 // =============================================================================
 // STRICT EQUALITY (Default)
@@ -13,9 +13,7 @@ import type { Source, Equals } from '../core/types.js'
  * Default strict equality function using Object.is
  * This is the default for source() signals
  */
-export function equals<T>(this: Source<T>, value: T): boolean {
-  return Object.is(value, this.v)
-}
+export const equals: Equals = (oldValue, newValue) => Object.is(oldValue, newValue)
 
 // =============================================================================
 // SAFE EQUALITY (Handles NaN and objects)
@@ -39,9 +37,7 @@ export function safeNotEqual<T>(a: T, b: T): boolean {
  * Safe equality function
  * Used for mutable sources where NaN and objects need special handling
  */
-export function safeEquals<T>(this: Source<T>, value: T): boolean {
-  return !safeNotEqual(value, this.v)
-}
+export const safeEquals: Equals = (oldValue, newValue) => !safeNotEqual(oldValue, newValue)
 
 // =============================================================================
 // SHALLOW EQUALITY
@@ -51,31 +47,29 @@ export function safeEquals<T>(this: Source<T>, value: T): boolean {
  * Shallow equality for objects/arrays
  * Compares own enumerable properties one level deep
  */
-export function shallowEquals<T>(this: Source<T>, value: T): boolean {
-  const current = this.v
-
+export const shallowEquals: Equals = (oldValue, newValue) => {
   // Handle primitives and identical references
-  if (Object.is(value, current)) {
+  if (Object.is(oldValue, newValue)) {
     return true
   }
 
   // Both must be objects
   if (
-    typeof value !== 'object' ||
-    value === null ||
-    typeof current !== 'object' ||
-    current === null
+    typeof oldValue !== 'object' ||
+    oldValue === null ||
+    typeof newValue !== 'object' ||
+    newValue === null
   ) {
     return false
   }
 
   // Check array length
-  if (Array.isArray(value) && Array.isArray(current)) {
-    if (value.length !== current.length) {
+  if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+    if (oldValue.length !== newValue.length) {
       return false
     }
-    for (let i = 0; i < value.length; i++) {
-      if (!Object.is(value[i], current[i])) {
+    for (let i = 0; i < oldValue.length; i++) {
+      if (!Object.is(oldValue[i], newValue[i])) {
         return false
       }
     }
@@ -83,17 +77,20 @@ export function shallowEquals<T>(this: Source<T>, value: T): boolean {
   }
 
   // Check object keys
-  const valueKeys = Object.keys(value)
-  const currentKeys = Object.keys(current)
+  const oldKeys = Object.keys(oldValue)
+  const newKeys = Object.keys(newValue)
 
-  if (valueKeys.length !== currentKeys.length) {
+  if (oldKeys.length !== newKeys.length) {
     return false
   }
 
-  for (const key of valueKeys) {
+  for (const key of oldKeys) {
     if (
-      !Object.prototype.hasOwnProperty.call(current, key) ||
-      !Object.is((value as Record<string, unknown>)[key], (current as Record<string, unknown>)[key])
+      !Object.prototype.hasOwnProperty.call(newValue, key) ||
+      !Object.is(
+        (oldValue as Record<string, unknown>)[key],
+        (newValue as Record<string, unknown>)[key]
+      )
     ) {
       return false
     }
@@ -110,23 +107,17 @@ export function shallowEquals<T>(this: Source<T>, value: T): boolean {
  * Create a custom equality function
  */
 export function createEquals<T>(fn: (a: T, b: T) => boolean): Equals<T> {
-  return function (this: Source<T>, value: T): boolean {
-    return fn(value, this.v)
-  }
+  return (oldValue, newValue) => fn(oldValue, newValue)
 }
 
 /**
  * Never equal - always triggers updates
  * Useful for forcing reactivity
  */
-export function neverEquals<T>(this: Source<T>, _value: T): boolean {
-  return false
-}
+export const neverEquals: Equals = () => false
 
 /**
  * Always equal - never triggers updates
  * Useful for static values
  */
-export function alwaysEquals<T>(this: Source<T>, _value: T): boolean {
-  return true
-}
+export const alwaysEquals: Equals = () => true

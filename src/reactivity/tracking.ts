@@ -117,7 +117,7 @@ export function set<T>(signal: Source<T>, value: T): T {
   }
 
   // Only update if value actually changed
-  if (!signal.equals.call(signal, value)) {
+  if (!signal.equals(signal.v, value)) {
     signal.v = value
     signal.wv = incrementWriteVersion()
 

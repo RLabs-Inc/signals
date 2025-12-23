@@ -286,8 +286,9 @@ export function proxy<T extends object>(value: T): T {
 
       // Add keys from sources that aren't in target but aren't UNINITIALIZED
       for (const [key, s] of sources) {
-        if (s.v !== UNINITIALIZED && !(key in target) && !keys.includes(key)) {
-          keys.push(key)
+        const k = key as string | symbol
+        if (s.v !== UNINITIALIZED && !(key in target) && !keys.includes(k)) {
+          keys.push(k)
         }
       }
 

@@ -10,7 +10,9 @@ import type { UNINITIALIZED } from './constants.js'
 // =============================================================================
 
 /** Equality function for comparing signal values */
-export type Equals<T = unknown> = (this: Source<T>, value: T) => boolean
+// Using `any` to avoid covariance issues - equality functions don't need strong typing
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Equals<T = any> = (oldValue: any, newValue: any) => boolean
 
 // =============================================================================
 // BASE SIGNAL INTERFACE
