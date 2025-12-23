@@ -1,0 +1,53 @@
+{
+  "name": "@rlabs-inc/signals",
+  "version": "1.0.0",
+  "description": "Production-grade fine-grained reactivity for TypeScript. A complete standalone mirror of Svelte 5's reactivity system - signals, effects, derived values, deep reactivity, and reactive collections.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outfile dist/index.mjs --target node --format esm && bun build src/index.ts --outfile dist/index.js --target node --format cjs && bun run build:types",
+    "build:types": "tsc --emitDeclarationOnly --declaration --outDir dist",
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:integration": "bun test test/integration",
+    "test:perf": "bun test test/performance",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "signals",
+    "reactivity",
+    "reactive",
+    "fine-grained",
+    "proxy",
+    "state",
+    "effect",
+    "derived",
+    "computed",
+    "observable",
+    "svelte",
+    "typescript"
+  ],
+  "author": "RLabs Inc.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rlabs-inc/signals"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
