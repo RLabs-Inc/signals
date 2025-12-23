@@ -381,12 +381,21 @@ describe('self-referencing effects', () => {
 
   it('throws on infinite loop', () => {
     const count = signal(0)
+    let errorThrown = false
 
-    effect(() => {
+    const dispose = effect(() => {
       count.value = count.value + 1
     })
 
-    expect(() => flushSync()).toThrow('Maximum update depth exceeded')
+    try {
+      flushSync()
+    } catch (e) {
+      errorThrown = true
+      expect((e as Error).message).toContain('Maximum update depth exceeded')
+    }
+
+    dispose() // Clean up the effect
+    expect(errorThrown).toBe(true)
   })
 })
 
