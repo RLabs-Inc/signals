@@ -8,6 +8,7 @@ A complete standalone mirror of Svelte 5's reactivity system. No compiler needed
 
 - **True Fine-Grained Reactivity** - Changes to deeply nested properties only trigger effects that read that exact path
 - **Per-Property Tracking** - Proxy-based deep reactivity with lazy signal creation per property
+- **Reactive Bindings** - Two-way data binding with `bind()` for connecting reactive values
 - **Three-State Dirty Tracking** - Efficient CLEAN/MAYBE_DIRTY/DIRTY propagation
 - **Automatic Cleanup** - Effects clean up when disposed, no memory leaks
 - **Batching** - Group updates to prevent redundant effect runs
@@ -93,6 +94,76 @@ Deriveds are:
 - **Lazy** - Only computed when read
 - **Cached** - Value is memoized until dependencies change
 - **Pure** - Cannot write to signals inside (throws error)
+
+### Bindings
+
+#### `bind<T>(source: WritableSignal<T>): Binding<T>`
+
+Create a reactive binding that forwards reads and writes to a source signal. Useful for two-way data binding and connecting reactive values across components.
+
+```typescript
+const source = signal(0)
+const binding = bind(source)
+
+// Reading through binding reads from source
+console.log(binding.value)  // 0
+
+// Writing through binding writes to source
+binding.value = 42
+console.log(source.value)  // 42
+```
+
+**Use cases:**
+- Two-way binding for form inputs
+- Connecting parent state to child components
+- Creating reactive links between signals
+
+```typescript
+// Two-way binding example
+const username = signal('')
+const inputBinding = bind(username)
+
+// When user types (e.g., in a UI framework):
+inputBinding.value = 'alice'  // Updates username signal!
+
+// When username changes programmatically:
+username.value = 'bob'        // inputBinding.value is now 'bob'
+```
+
+#### `bindReadonly<T>(source: ReadableSignal<T>): ReadonlyBinding<T>`
+
+Create a read-only binding. Attempting to write throws an error.
+
+```typescript
+const source = signal(0)
+const readonly = bindReadonly(source)
+
+console.log(readonly.value)  // 0
+// readonly.value = 42       // Would throw at compile time
+```
+
+#### `isBinding(value): boolean`
+
+Check if a value is a binding.
+
+```typescript
+const binding = bind(signal(0))
+console.log(isBinding(binding))  // true
+console.log(isBinding(signal(0)))  // false
+```
+
+#### `unwrap<T>(value: T | Binding<T>): T`
+
+Get the value from a binding, or return the value directly if not a binding.
+
+```typescript
+const arr: (string | Binding<string>)[] = [
+  'static',
+  bind(signal('dynamic'))
+]
+
+arr.map(unwrap)  // ['static', 'dynamic']
+```
 
 ### Effects
 
@@ -367,6 +438,7 @@ This library is designed for performance:
 | DOM integration | Yes | No |
 | Fine-grained reactivity | Yes | Yes |
 | Deep proxy reactivity | Yes | Yes |
+| Reactive bindings | `bind:` directive | `bind()` function |
 | Batching | Yes | Yes |
 | Effect cleanup | Yes | Yes |
 | TypeScript | Yes | Yes |

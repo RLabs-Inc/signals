@@ -1,7 +1,7 @@
 {
   "name": "@rlabs-inc/signals",
-  "version": "1.0.0",
-  "description": "Production-grade fine-grained reactivity for TypeScript. A complete standalone mirror of Svelte 5's reactivity system - signals, effects, derived values, deep reactivity, and reactive collections.",
+  "version": "1.2.0",
+  "description": "Production-grade fine-grained reactivity for TypeScript. A complete standalone mirror of Svelte 5's reactivity system - signals, effects, derived values, deep reactivity, reactive collections, and reactive bindings.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -37,6 +37,9 @@
     "derived",
     "computed",
     "observable",
+    "bind",
+    "binding",
+    "two-way-binding",
     "svelte",
     "typescript"
   ],

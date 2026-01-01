@@ -21,6 +21,7 @@ setProxyFn(proxy)
 export { signal, source, mutableSource, state, stateRaw } from './primitives/signal.js'
 export { derived, createDerived, disconnectDerived } from './primitives/derived.js'
 export { effect, createEffect, updateEffect, destroyEffect } from './primitives/effect.js'
+export { bind, bindReadonly, isBinding, unwrap } from './primitives/bind.js'
 
 // =============================================================================
 // DEEP REACTIVITY
@@ -158,3 +159,5 @@ export type {
   Equals,
   Uninitialized,
 } from './core/types.js'
+
+export type { Binding, ReadonlyBinding } from './primitives/bind.js'
