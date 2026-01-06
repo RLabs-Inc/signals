@@ -9,6 +9,34 @@ import { source } from '../primitives/signal.js'
 import { get, set } from '../reactivity/tracking.js'
 
 // =============================================================================
+// AUTO-CLEANUP VIA FINALIZATION REGISTRY
+// =============================================================================
+
+/** Cleanup data for a ReactiveMap */
+interface MapCleanupData {
+  keySignals: Map<unknown, Source<number>>
+  version: Source<number>
+  size: Source<number>
+}
+
+/**
+ * FinalizationRegistry for automatic ReactiveMap cleanup.
+ * When a ReactiveMap is garbage collected, we clean up all internal signals
+ * to prevent memory leaks.
+ */
+const mapCleanup = new FinalizationRegistry<MapCleanupData>((data) => {
+  // Clear reactions on version and size signals
+  data.version.reactions = null
+  data.size.reactions = null
+
+  // Clear reactions on all per-key signals
+  for (const sig of data.keySignals.values()) {
+    sig.reactions = null
+  }
+  data.keySignals.clear()
+})
+
+// =============================================================================
 // REACTIVE MAP
 // =============================================================================
 
@@ -46,6 +74,13 @@ export class ReactiveMap<K, V> extends Map<K, V> {
   constructor(entries?: Iterable<readonly [K, V]> | null) {
     super(entries)
     this.#size = source(super.size)
+
+    // Register for automatic cleanup when ReactiveMap is GC'd
+    mapCleanup.register(this, {
+      keySignals: this.#keySignals,
+      version: this.#version,
+      size: this.#size,
+    })
   }
 
   /**

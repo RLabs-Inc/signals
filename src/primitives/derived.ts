@@ -23,6 +23,30 @@ import {
 } from '../reactivity/tracking.js'
 
 // =============================================================================
+// AUTO-CLEANUP VIA FINALIZATION REGISTRY
+// =============================================================================
+
+/**
+ * FinalizationRegistry for automatic derived cleanup.
+ * When a derived wrapper is garbage collected, we disconnect it from
+ * the dependency graph to prevent memory leaks.
+ */
+const derivedCleanup = new FinalizationRegistry<Derived>((d) => {
+  // Use disconnectDerived logic inline to avoid circular issues
+  removeReactions(d, 0)
+  d.deps = null
+  d.reactions = null
+  // Destroy any effects created inside this derived
+  const effects = d.effects
+  if (effects !== null) {
+    d.effects = null
+    for (let i = 0; i < effects.length; i++) {
+      destroyEffectImpl(effects[i])
+    }
+  }
+})
+
+// =============================================================================
 // DERIVED OPTIONS
 // =============================================================================
 
@@ -159,11 +183,16 @@ function destroyDerivedEffects(derived: Derived): void {
 export function derived<T>(fn: () => T, options?: DerivedOptions<T>): DerivedSignal<T> {
   const d = createDerived(fn, options)
 
-  return {
+  const wrapper = {
     get value(): T {
       return get(d)
     },
   }
+
+  // Register for automatic cleanup when derived is GC'd
+  derivedCleanup.register(wrapper, d)
+
+  return wrapper
 }
 
 /**

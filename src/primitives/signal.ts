@@ -8,6 +8,13 @@ import { equals as defaultEquals, safeEquals } from '../reactivity/equality.js'
 import { get, set } from '../reactivity/tracking.js'
 
 // =============================================================================
+// SYMBOL FOR SOURCE ACCESS
+// =============================================================================
+
+/** Symbol to access the internal Source from a signal wrapper */
+const SOURCE_SYMBOL = Symbol('signal.source')
+
+// =============================================================================
 // SOURCE (Internal Signal)
 // =============================================================================
 
@@ -46,6 +53,19 @@ export interface SignalOptions<T> {
   equals?: Equals<T>
 }
 
+// =============================================================================
+// AUTO-CLEANUP VIA FINALIZATION REGISTRY
+// =============================================================================
+
+/**
+ * FinalizationRegistry for automatic signal cleanup.
+ * When a signal wrapper is garbage collected, we clean up the internal Source
+ * to break any remaining reaction links.
+ */
+const signalCleanup = new FinalizationRegistry<Source<unknown>>((src) => {
+  src.reactions = null
+})
+
 /**
  * Create a writable signal
  *
@@ -60,7 +80,8 @@ export interface SignalOptions<T> {
 export function signal<T>(initialValue: T, options?: SignalOptions<T>): WritableSignal<T> {
   const src = source(initialValue, options)
 
-  return {
+  const sig = {
+    [SOURCE_SYMBOL]: src,
     get value(): T {
       return get(src)
     },
@@ -68,6 +89,19 @@ export function signal<T>(initialValue: T, options?: SignalOptions<T>): Writable
       set(src, newValue)
     },
   }
+
+  // Register for automatic cleanup when signal is GC'd
+  signalCleanup.register(sig, src)
+
+  return sig
+}
+
+/**
+ * Get the internal Source from a signal wrapper.
+ * Used internally for cleanup registration.
+ */
+export function getSource<T>(sig: WritableSignal<T>): Source<T> | undefined {
+  return (sig as unknown as Record<symbol, Source<T>>)[SOURCE_SYMBOL]
 }
 
 // =============================================================================

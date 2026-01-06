@@ -15,6 +15,32 @@ import {
 } from '../core/globals.js'
 
 // =============================================================================
+// AUTO-CLEANUP VIA FINALIZATION REGISTRY
+// =============================================================================
+
+/** Cleanup data for a proxy */
+interface ProxyCleanupData {
+  sources: Map<PropertyKey, Source<unknown>>
+  version: Source<number>
+}
+
+/**
+ * FinalizationRegistry for automatic proxy cleanup.
+ * When a proxy is garbage collected, we clean up all internal signals
+ * (the per-property sources Map and version signal) to prevent memory leaks.
+ */
+const proxyCleanup = new FinalizationRegistry<ProxyCleanupData>((data) => {
+  // Clear reactions on the version signal
+  data.version.reactions = null
+
+  // Clear reactions on all per-property signals and clear the map
+  for (const src of data.sources.values()) {
+    src.reactions = null
+  }
+  data.sources.clear()
+})
+
+// =============================================================================
 // TYPE GUARDS
 // =============================================================================
 
@@ -308,6 +334,9 @@ export function proxy<T extends object>(value: T): T {
       return Reflect.getOwnPropertyDescriptor(target, prop)
     },
   })
+
+  // Register for automatic cleanup when proxy is GC'd
+  proxyCleanup.register(proxyObj, { sources, version })
 
   return proxyObj as T
 }

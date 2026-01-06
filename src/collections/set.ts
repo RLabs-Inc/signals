@@ -9,6 +9,34 @@ import { source } from '../primitives/signal.js'
 import { get, set } from '../reactivity/tracking.js'
 
 // =============================================================================
+// AUTO-CLEANUP VIA FINALIZATION REGISTRY
+// =============================================================================
+
+/** Cleanup data for a ReactiveSet */
+interface SetCleanupData {
+  itemSignals: Map<unknown, Source<boolean>>
+  version: Source<number>
+  size: Source<number>
+}
+
+/**
+ * FinalizationRegistry for automatic ReactiveSet cleanup.
+ * When a ReactiveSet is garbage collected, we clean up all internal signals
+ * to prevent memory leaks.
+ */
+const setCleanup = new FinalizationRegistry<SetCleanupData>((data) => {
+  // Clear reactions on version and size signals
+  data.version.reactions = null
+  data.size.reactions = null
+
+  // Clear reactions on all per-item signals
+  for (const sig of data.itemSignals.values()) {
+    sig.reactions = null
+  }
+  data.itemSignals.clear()
+})
+
+// =============================================================================
 // REACTIVE SET
 // =============================================================================
 
@@ -46,6 +74,13 @@ export class ReactiveSet<T> extends Set<T> {
   constructor(values?: Iterable<T> | null) {
     super(values)
     this.#size = source(super.size)
+
+    // Register for automatic cleanup when ReactiveSet is GC'd
+    setCleanup.register(this, {
+      itemSignals: this.#itemSignals,
+      version: this.#version,
+      size: this.#size,
+    })
   }
 
   /**
