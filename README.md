@@ -2,23 +2,16 @@
 
 **Production-grade fine-grained reactivity for TypeScript.**
 
-A complete standalone mirror of Svelte 5's reactivity system. No compiler needed, no DOM, works anywhere - Bun, Node, Deno, or browser.
+A complete standalone mirror of Svelte 5's reactivity system, enhanced with Angular's linkedSignal, Solid's createSelector, and Vue's effectScope. No compiler needed, no DOM, works anywhere - Bun, Node, Deno, or browser.
 
-## Features
+## Why This Library?
 
 - **True Fine-Grained Reactivity** - Changes to deeply nested properties only trigger effects that read that exact path
 - **Per-Property Tracking** - Proxy-based deep reactivity with lazy signal creation per property
-- **Reactive Bindings** - Two-way data binding with `bind()` for connecting reactive values
-- **linkedSignal** - Angular's killer feature: writable computed that resets when source changes
-- **createSelector** - Solid's O(n)→O(2) optimization for list selection
-- **effectScope** - Vue's lifecycle management with pause/resume support
-- **Three-State Dirty Tracking** - Efficient CLEAN/MAYBE_DIRTY/DIRTY propagation
-- **Automatic Cleanup** - Effects clean up when disposed, no memory leaks
-- **Batching** - Group updates to prevent redundant effect runs
-- **Self-Referencing Effects** - Effects can write to their own dependencies
-- **Infinite Loop Protection** - Throws after 1000 iterations to catch bugs
-- **Reactive Collections** - ReactiveMap, ReactiveSet, ReactiveDate
-- **TypeScript Native** - Full type safety with generics
+- **Framework-Agnostic** - Use the best patterns from Svelte, Angular, Solid, and Vue in any environment
+- **Zero Dependencies** - Pure TypeScript, no runtime dependencies
+- **Automatic Memory Cleanup** - FinalizationRegistry ensures signals are garbage collected properly
+- **Battle-Tested Patterns** - Based on proven reactivity systems from major frameworks
 
 ## Installation
 
@@ -52,13 +45,17 @@ count.value = 5
 flushSync()  // Logs: "Count: 5, Doubled: 10"
 ```
 
-## API Reference
+---
 
-### Signals
+## Core Primitives
 
-#### `signal<T>(initialValue: T, options?): WritableSignal<T>`
+### signal
 
 Create a reactive value with `.value` getter/setter.
+
+```typescript
+signal<T>(initialValue: T, options?: { equals?: (a: T, b: T) => boolean }): WritableSignal<T>
+```
 
 ```typescript
 const name = signal('John')
@@ -66,24 +63,69 @@ console.log(name.value)  // 'John'
 name.value = 'Jane'      // Triggers effects
 ```
 
-**Options:**
-- `equals?: (a: T, b: T) => boolean` - Custom equality function
+### signals
 
-#### `state<T extends object>(initialValue: T): T`
+Create multiple signals at once from an object.
+
+```typescript
+signals<T>(initial: T): { [K in keyof T]: WritableSignal<T[K]> }
+```
+
+```typescript
+// Instead of:
+const content = signal('hello')
+const width = signal(40)
+const visible = signal(true)
+
+// Do this:
+const ui = signals({ content: 'hello', width: 40, visible: true })
+ui.content.value = 'updated'
+ui.width.value = 60
+```
+
+### state
 
 Create a deeply reactive object. No `.value` needed - access properties directly.
 
 ```typescript
-const user = state({ name: 'John', address: { city: 'NYC' } })
+state<T extends object>(initialValue: T): T
+```
+
+```typescript
+const user = state({
+  name: 'John',
+  address: { city: 'NYC' }
+})
 user.name = 'Jane'           // Reactive
 user.address.city = 'LA'     // Also reactive, deeply
 ```
 
-### Derived Values
+### stateRaw
 
-#### `derived<T>(fn: () => T): DerivedSignal<T>`
+Create a signal that holds an object reference without deep reactivity. Only triggers when the reference changes, not on mutations.
+
+```typescript
+stateRaw<T>(initialValue: T): WritableSignal<T>
+```
+
+```typescript
+const canvas = stateRaw(document.createElement('canvas'))
+// Only triggers when canvas.value is reassigned
+// Mutations to the canvas element don't trigger effects
+```
+
+Use `stateRaw` for:
+- DOM elements
+- Class instances
+- Large objects where you only care about replacement
+
+### derived
 
 Create a computed value that automatically updates when dependencies change.
+
+```typescript
+derived<T>(fn: () => T, options?: { equals?: Equals<T> }): DerivedSignal<T>
+```
 
 ```typescript
 const firstName = signal('John')
@@ -98,81 +140,17 @@ Deriveds are:
 - **Cached** - Value is memoized until dependencies change
 - **Pure** - Cannot write to signals inside (throws error)
 
-### Bindings
+---
 
-#### `bind<T>(source: WritableSignal<T>): Binding<T>`
+## Effects
 
-Create a reactive binding that forwards reads and writes to a source signal. Useful for two-way data binding and connecting reactive values across components.
-
-```typescript
-const source = signal(0)
-const binding = bind(source)
-
-// Reading through binding reads from source
-console.log(binding.value)  // 0
-
-// Writing through binding writes to source
-binding.value = 42
-console.log(source.value)  // 42
-```
-
-**Use cases:**
-- Two-way binding for form inputs
-- Connecting parent state to child components
-- Creating reactive links between signals
-
-```typescript
-// Two-way binding example
-const username = signal('')
-const inputBinding = bind(username)
-
-// When user types (e.g., in a UI framework):
-inputBinding.value = 'alice'  // Updates username signal!
-
-// When username changes programmatically:
-username.value = 'bob'        // inputBinding.value is now 'bob'
-```
-
-#### `bindReadonly<T>(source: ReadableSignal<T>): ReadonlyBinding<T>`
-
-Create a read-only binding. Attempting to write throws an error.
-
-```typescript
-const source = signal(0)
-const readonly = bindReadonly(source)
-
-console.log(readonly.value)  // 0
-// readonly.value = 42       // Would throw at compile time
-```
-
-#### `isBinding(value): boolean`
-
-Check if a value is a binding.
-
-```typescript
-const binding = bind(signal(0))
-console.log(isBinding(binding))  // true
-console.log(isBinding(signal(0)))  // false
-```
-
-#### `unwrap<T>(value: T | Binding<T>): T`
-
-Get the value from a binding, or return the value directly if not a binding.
-
-```typescript
-const arr: (string | Binding<string>)[] = [
-  'static',
-  bind(signal('dynamic'))
-]
-
-arr.map(unwrap)  // ['static', 'dynamic']
-```
-
-### Effects
-
-#### `effect(fn: () => void | CleanupFn): DisposeFn`
+### effect
 
 Create a side effect that re-runs when dependencies change.
+
+```typescript
+effect(fn: () => void | CleanupFn): DisposeFn
+```
 
 ```typescript
 const count = signal(0)
@@ -190,7 +168,17 @@ const dispose = effect(() => {
 dispose()
 ```
 
-#### `effect.root(fn: () => T): DisposeFn`
+### effect.pre
+
+Create an effect that runs synchronously (like `$effect.pre` in Svelte).
+
+```typescript
+effect.pre(() => {
+  // Runs immediately, not on microtask
+})
+```
+
+### effect.root
 
 Create an effect scope that can contain nested effects.
 
@@ -204,26 +192,91 @@ const dispose = effect.root(() => {
 dispose()
 ```
 
-#### `effect.pre(fn: () => void): DisposeFn`
+### effect.tracking
 
-Create an effect that runs synchronously (like `$effect.pre` in Svelte).
+Check if currently inside a reactive tracking context.
 
 ```typescript
-effect.pre(() => {
-  // Runs immediately, no flushSync needed
-})
+if (effect.tracking()) {
+  console.log('Inside an effect or derived')
+}
 ```
 
-### Linked Signals (Angular's killer feature)
+---
 
-#### `linkedSignal<D>(fn: () => D): WritableSignal<D>`
-#### `linkedSignal<S, D>(options: LinkedSignalOptions<S, D>): WritableSignal<D>`
+## Bindings
 
-Create a writable signal that derives from a source but can be manually overridden.
-When the source changes, the linked signal resets to the computed value.
+Two-way reactive pointers that forward reads and writes to a source signal.
+
+### bind
+
+Create a reactive binding.
 
 ```typescript
-// Simple form - derives directly from source
+bind<T>(source: WritableSignal<T> | Binding<T> | T | (() => T)): Binding<T>
+```
+
+```typescript
+const source = signal(0)
+const binding = bind(source)
+
+// Reading through binding reads from source
+console.log(binding.value)  // 0
+
+// Writing through binding writes to source
+binding.value = 42
+console.log(source.value)  // 42
+```
+
+**Overloads:**
+- `bind(signal)` - Creates writable binding to signal
+- `bind(binding)` - Chains bindings (both point to same source)
+- `bind(value)` - Wraps raw value in a signal
+- `bind(() => expr)` - Creates read-only binding from getter
+
+**Use cases:**
+- Two-way binding for form inputs
+- Connecting parent state to child components
+- Creating reactive links between signals
+
+### bindReadonly
+
+Create a read-only binding.
+
+```typescript
+const source = signal(0)
+const readonly = bindReadonly(source)
+
+console.log(readonly.value)  // 0
+// readonly.value = 42       // TypeScript error + runtime error
+```
+
+### isBinding / unwrap
+
+```typescript
+// Check if a value is a binding
+isBinding(maybeBinding)  // true or false
+
+// Get value from binding or return value directly
+const arr: (string | Binding<string>)[] = ['static', bind(signal('dynamic'))]
+arr.map(unwrap)  // ['static', 'dynamic']
+```
+
+---
+
+## Advanced Features
+
+### linkedSignal (Angular's killer feature)
+
+Create a writable signal that derives from a source but can be manually overridden. When the source changes, the linked signal resets to the computed value.
+
+```typescript
+linkedSignal<D>(fn: () => D): WritableSignal<D>
+linkedSignal<S, D>(options: LinkedSignalOptions<S, D>): WritableSignal<D>
+```
+
+```typescript
+// Simple form - dropdown selection
 const options = signal(['a', 'b', 'c'])
 const selected = linkedSignal(() => options.value[0])
 
@@ -237,7 +290,7 @@ console.log(selected.value)  // 'x' (reset to computed value)
 ```
 
 ```typescript
-// Advanced form - with previous value tracking
+// Advanced form - keep valid selection
 const items = signal([1, 2, 3])
 const selectedItem = linkedSignal({
   source: () => items.value,
@@ -256,12 +309,16 @@ const selectedItem = linkedSignal({
 - Selection state that persists within valid options
 - Derived values that can be temporarily overridden
 
-### Selectors (Solid's O(n)→O(2) optimization)
+### createSelector (Solid's O(n) to O(2) optimization)
 
-#### `createSelector<T, U = T>(source: () => T, fn?: (key: U, value: T) => boolean): SelectorFn<T, U>`
+Create a selector function for efficient list selection tracking. Instead of O(n) effects re-running, only affected items run = O(2).
 
-Create a selector function for efficient list selection tracking.
-Instead of O(n) effects re-running, only affected items run = O(2).
+```typescript
+createSelector<T, U = T>(
+  source: () => T,
+  fn?: (key: U, value: T) => boolean
+): SelectorFn<T, U>
+```
 
 ```typescript
 const selectedId = signal(1)
@@ -284,17 +341,27 @@ items.forEach(item => {
 })
 ```
 
-### Effect Scope (Vue's lifecycle management)
-
-#### `effectScope(detached?: boolean): EffectScope`
+### effectScope (Vue's lifecycle management)
 
 Create an effect scope to group effects for batch disposal with pause/resume support.
+
+```typescript
+effectScope(detached?: boolean): EffectScope
+
+interface EffectScope {
+  readonly active: boolean
+  readonly paused: boolean
+  run<R>(fn: () => R): R | undefined
+  stop(): void
+  pause(): void
+  resume(): void
+}
+```
 
 ```typescript
 const scope = effectScope()
 
 scope.run(() => {
-  // Effects created here are tracked by the scope
   effect(() => console.log(count.value))
   effect(() => console.log(name.value))
 
@@ -303,31 +370,92 @@ scope.run(() => {
   })
 })
 
+// Pause execution temporarily
+scope.pause()
+count.value = 5  // Effect doesn't run
+
+// Resume and run pending updates
+scope.resume()
+
 // Later, dispose all effects at once
 scope.stop()
 ```
 
-#### Pause and Resume
-
-```typescript
-scope.pause()    // Effects won't run while paused
-
-count.value = 5  // Effect doesn't run
-
-scope.resume()   // Pending updates run
-```
-
-#### `getCurrentScope(): EffectScope | null`
-
-Get the currently active effect scope.
-
-#### `onScopeDispose(fn: () => void): void`
+### onScopeDispose
 
 Register a cleanup function on the current scope.
 
-### Batching & Scheduling
+```typescript
+scope.run(() => {
+  const timer = setInterval(() => log('tick'), 1000)
+  onScopeDispose(() => clearInterval(timer))
+})
+```
 
-#### `batch(fn: () => T): T`
+### getCurrentScope
+
+Get the currently active effect scope.
+
+```typescript
+const scope = getCurrentScope()
+if (scope) {
+  // Inside a scope
+}
+```
+
+---
+
+## Reactive Collections
+
+### ReactiveMap
+
+A Map with per-key reactivity.
+
+```typescript
+const users = new ReactiveMap<string, User>()
+
+effect(() => {
+  console.log(users.get('john'))  // Only re-runs when 'john' changes
+})
+
+users.set('jane', { name: 'Jane' })  // Doesn't trigger above effect
+users.set('john', { name: 'John!' }) // Triggers above effect
+```
+
+### ReactiveSet
+
+A Set with per-item reactivity.
+
+```typescript
+const tags = new ReactiveSet<string>()
+
+effect(() => {
+  console.log(tags.has('important'))  // Only re-runs when 'important' changes
+})
+
+tags.add('todo')       // Doesn't trigger above effect
+tags.add('important')  // Triggers above effect
+```
+
+### ReactiveDate
+
+A Date with reactive getters/setters.
+
+```typescript
+const date = new ReactiveDate()
+
+effect(() => {
+  console.log(date.getHours())  // Re-runs when time changes
+})
+
+date.setHours(12)  // Triggers effect
+```
+
+---
+
+## Utilities
+
+### batch
 
 Batch multiple signal updates into a single effect run.
 
@@ -344,7 +472,21 @@ batch(() => {
 // Effect runs once with final values, not twice
 ```
 
-#### `flushSync<T>(fn?: () => T): T | undefined`
+### untrack / peek
+
+Read signals without creating dependencies.
+
+```typescript
+effect(() => {
+  const a = count.value                    // Creates dependency
+  const b = untrack(() => other.value)     // No dependency
+})
+
+// peek is an alias for untrack
+const value = peek(() => signal.value)
+```
+
+### flushSync
 
 Synchronously flush all pending effects.
 
@@ -353,44 +495,33 @@ count.value = 5
 flushSync()  // Effects run NOW, not on next microtask
 ```
 
-#### `tick(): Promise<void>`
+### tick
 
-Wait for the next update cycle.
+Wait for the next update cycle (async).
 
 ```typescript
 count.value = 5
 await tick()  // Effects have run
 ```
 
-### Utilities
+---
 
-#### `untrack<T>(fn: () => T): T`
+## Deep Reactivity
 
-Read signals without creating dependencies.
-
-```typescript
-effect(() => {
-  const a = count.value           // Creates dependency
-  const b = untrack(() => other.value)  // No dependency
-})
-```
-
-#### `peek<T>(signal: Source<T>): T`
-
-Read a signal's value without tracking (low-level).
-
-### Deep Reactivity
-
-#### `proxy<T extends object>(value: T): T`
+### proxy
 
 Create a deeply reactive proxy (used internally by `state()`).
 
 ```typescript
 const obj = proxy({ a: { b: { c: 1 } } })
-obj.a.b.c = 2  // Only triggers effects reading a.b.c
+
+effect(() => console.log('c changed:', obj.a.b.c))
+effect(() => console.log('a changed:', obj.a))
+
+obj.a.b.c = 2  // Only triggers first effect (fine-grained!)
 ```
 
-#### `toRaw<T>(value: T): T`
+### toRaw
 
 Get the original object from a proxy.
 
@@ -398,102 +529,51 @@ Get the original object from a proxy.
 const raw = toRaw(user)  // Original non-reactive object
 ```
 
-#### `isReactive(value: unknown): boolean`
+### isReactive
 
 Check if a value is a reactive proxy.
 
-### Reactive Collections
-
-#### `ReactiveMap<K, V>`
-
-A Map with per-key reactivity.
-
 ```typescript
-const users = new ReactiveMap<string, User>()
-
-effect(() => {
-  console.log(users.get('john'))  // Only re-runs when 'john' changes
-})
-
-users.set('jane', { name: 'Jane' })  // Doesn't trigger above effect
+if (isReactive(value)) {
+  console.log('This is a proxy')
+}
 ```
 
-#### `ReactiveSet<T>`
+---
 
-A Set with per-item reactivity.
+## Equality Functions
 
-```typescript
-const tags = new ReactiveSet<string>()
-
-effect(() => {
-  console.log(tags.has('important'))  // Only re-runs when 'important' changes
-})
-```
-
-#### `ReactiveDate`
-
-A Date with reactive getters/setters.
+Control when signals trigger updates:
 
 ```typescript
-const date = new ReactiveDate()
+import { signal, equals, safeEquals, shallowEquals, neverEquals, alwaysEquals, createEquals } from '@rlabs-inc/signals'
 
-effect(() => {
-  console.log(date.getHours())  // Re-runs when time changes
-})
+// Default - uses Object.is
+const a = signal(0)  // Uses equals by default
 
-date.setHours(12)  // Triggers effect
+// Safe equality - handles NaN correctly
+const b = signal(NaN, { equals: safeEquals })
+
+// Shallow comparison - compares one level deep
+const c = signal({ a: 1 }, { equals: shallowEquals })
+c.value = { a: 1 }  // Won't trigger - shallowly equal
+
+// Always trigger updates
+const d = signal(0, { equals: neverEquals })
+d.value = 0  // Still triggers!
+
+// Never trigger updates
+const e = signal(0, { equals: alwaysEquals })
+e.value = 100  // Doesn't trigger
+
+// Custom equality
+const customEquals = createEquals((a, b) =>
+  JSON.stringify(a) === JSON.stringify(b)
+)
+const f = signal([], { equals: customEquals })
 ```
 
-## Advanced Usage
-
-### Self-Referencing Effects
-
-Effects can write to signals they depend on:
-
-```typescript
-const count = signal(0)
-
-effect(() => {
-  if (count.value < 10) {
-    count.value++  // Will re-run until count reaches 10
-  }
-})
-```
-
-**Note:** Unguarded self-references throw after 1000 iterations.
-
-### Custom Equality
-
-```typescript
-import { signal, shallowEquals } from '@rlabs-inc/signals'
-
-const obj = signal({ a: 1 }, { equals: shallowEquals })
-obj.value = { a: 1 }  // Won't trigger - shallowly equal
-```
-
-Built-in equality functions:
-- `equals` - Default, uses `Object.is`
-- `safeEquals` - Handles NaN correctly
-- `shallowEquals` - Shallow object comparison
-- `neverEquals` - Always triggers (always false)
-- `alwaysEquals` - Never triggers (always true)
-
-### Low-Level API
-
-For advanced use cases, you can access internal primitives:
-
-```typescript
-import { source, get, set } from '@rlabs-inc/signals'
-
-// Create a raw source (no .value wrapper)
-const src = source(0)
-
-// Read with tracking
-const value = get(src)
-
-// Write with notification
-set(src, 10)
-```
+---
 
 ## Error Handling
 
@@ -534,29 +614,73 @@ effect(() => {
 })
 ```
 
+---
+
 ## Performance
 
 This library is designed for performance:
 
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Signal read/write | O(1) | Direct property access |
+| Derived read | O(1) | Cached after first computation |
+| Effect trigger | O(deps) | Only runs if dependencies change |
+| `batch()` | O(1) cycle | Multiple updates, single flush |
+| `createSelector()` | O(2) | Only changed items' effects run |
+| Proxy property access | O(1) | Per-property signal lookup |
+| `ReactiveMap.get()` | O(1) | Per-key tracking |
+
+**Key optimizations:**
 - **Lazy evaluation** - Deriveds only compute when read
 - **Version-based deduplication** - No duplicate dependency tracking
 - **Linked list effect tree** - O(1) effect insertion/removal
 - **Microtask batching** - Updates coalesce automatically
 - **Per-property signals** - Fine-grained updates at any depth
+- **FinalizationRegistry cleanup** - Automatic memory management
 
-## Comparison with Svelte 5
+---
 
-| Feature | Svelte 5 | @rlabs-inc/signals |
-|---------|----------|-------------------|
-| Compiler required | Yes | No |
-| DOM integration | Yes | No |
-| Fine-grained reactivity | Yes | Yes |
-| Deep proxy reactivity | Yes | Yes |
-| Reactive bindings | `bind:` directive | `bind()` function |
-| Batching | Yes | Yes |
-| Effect cleanup | Yes | Yes |
-| TypeScript | Yes | Yes |
-| Runs in Node/Bun | Needs adapter | Native |
+## Framework Comparison
+
+| Feature | @rlabs-inc/signals | Svelte 5 | Vue 3 | Angular | Solid.js |
+|---------|-------------------|----------|-------|---------|----------|
+| `signal()` | `signal()` | `$state` | `ref()` | `signal()` | `createSignal()` |
+| `derived()` | `derived()` | `$derived` | `computed()` | `computed()` | `createMemo()` |
+| `effect()` | `effect()` | `$effect` | `watchEffect()` | `effect()` | `createEffect()` |
+| Deep reactivity | `state()` | `$state` | `reactive()` | - | - |
+| `linkedSignal()` | Yes | - | - | Yes | - |
+| `createSelector()` | Yes | - | - | - | Yes |
+| `effectScope()` | Yes | - | Yes | - | - |
+| Compiler required | No | Yes | No | No | No |
+| DOM integration | No | Yes | Yes | Yes | Yes |
+
+---
+
+## Low-Level API
+
+For advanced use cases (framework authors, custom reactivity):
+
+```typescript
+import {
+  source, mutableSource,  // Raw signal creation
+  get, set,               // Track/update values
+  isDirty,                // Check if needs update
+  markReactions,          // Notify dependents
+  createEffect,           // Raw effect creation
+  createDerived,          // Raw derived creation
+} from '@rlabs-inc/signals'
+
+// Create a raw source (no .value wrapper)
+const src = source(0)
+
+// Read with tracking
+const value = get(src)
+
+// Write with notification
+set(src, 10)
+```
+
+---
 
 ## License
 
