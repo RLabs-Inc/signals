@@ -89,6 +89,19 @@ export const STATE_SYMBOL: unique symbol = Symbol.for('rlabs.signals.state')
 /** Symbol to mark reactive proxies */
 export const REACTIVE_MARKER: unique symbol = Symbol.for('rlabs.signals.reactive')
 
+/** Symbol to identify Binding objects (must not be proxied) */
+export const BINDING_SYMBOL: unique symbol = Symbol.for('rlabs.signals.binding')
+
+/** Symbol to identify LinkedSignal objects */
+export const LINKED_SYMBOL: unique symbol = Symbol.for('rlabs.signals.linked')
+
+// =============================================================================
+// SOURCE FLAG
+// =============================================================================
+
+/** Flag to identify Source objects */
+export const SOURCE = 1 << 0
+
 // =============================================================================
 // STATUS MASK (for clearing status bits)
 // =============================================================================

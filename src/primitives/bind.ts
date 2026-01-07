@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { WritableSignal, ReadableSignal, Source } from '../core/types.js'
+import { BINDING_SYMBOL } from '../core/constants.js'
 import { signal, getSource } from './signal.js'
 
 // =============================================================================
@@ -40,12 +41,6 @@ export interface Binding<T> {
 export interface ReadonlyBinding<T> {
   readonly value: T
 }
-
-// =============================================================================
-// SYMBOL FOR BINDING DETECTION
-// =============================================================================
-
-const BINDING_SYMBOL = Symbol('binding')
 
 /**
  * Check if a value is a binding created by bind()

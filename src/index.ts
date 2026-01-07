@@ -22,6 +22,9 @@ export { signal, source, mutableSource, state, stateRaw } from './primitives/sig
 export { derived, createDerived, disconnectDerived } from './primitives/derived.js'
 export { effect, createEffect, updateEffect, destroyEffect } from './primitives/effect.js'
 export { bind, bindReadonly, isBinding, unwrap, signals } from './primitives/bind.js'
+export { linkedSignal, isLinkedSignal } from './primitives/linked.js'
+export { createSelector } from './primitives/selector.js'
+export { effectScope, getCurrentScope, onScopeDispose } from './primitives/scope.js'
 
 // =============================================================================
 // DEEP REACTIVITY
@@ -105,6 +108,8 @@ export {
   STALE_REACTION,
   STATE_SYMBOL,
   REACTIVE_MARKER,
+  BINDING_SYMBOL,
+  LINKED_SYMBOL,
 } from './core/constants.js'
 
 // =============================================================================
@@ -161,3 +166,6 @@ export type {
 } from './core/types.js'
 
 export type { Binding, ReadonlyBinding } from './primitives/bind.js'
+export type { LinkedSignalOptions, LinkedSignalConfig } from './primitives/linked.js'
+export type { SelectorFn } from './primitives/selector.js'
+export type { EffectScope } from './primitives/scope.js'

@@ -9,6 +9,9 @@ A complete standalone mirror of Svelte 5's reactivity system. No compiler needed
 - **True Fine-Grained Reactivity** - Changes to deeply nested properties only trigger effects that read that exact path
 - **Per-Property Tracking** - Proxy-based deep reactivity with lazy signal creation per property
 - **Reactive Bindings** - Two-way data binding with `bind()` for connecting reactive values
+- **linkedSignal** - Angular's killer feature: writable computed that resets when source changes
+- **createSelector** - Solid's O(n)→O(2) optimization for list selection
+- **effectScope** - Vue's lifecycle management with pause/resume support
 - **Three-State Dirty Tracking** - Efficient CLEAN/MAYBE_DIRTY/DIRTY propagation
 - **Automatic Cleanup** - Effects clean up when disposed, no memory leaks
 - **Batching** - Group updates to prevent redundant effect runs
@@ -210,6 +213,117 @@ effect.pre(() => {
   // Runs immediately, no flushSync needed
 })
 ```
+
+### Linked Signals (Angular's killer feature)
+
+#### `linkedSignal<D>(fn: () => D): WritableSignal<D>`
+#### `linkedSignal<S, D>(options: LinkedSignalOptions<S, D>): WritableSignal<D>`
+
+Create a writable signal that derives from a source but can be manually overridden.
+When the source changes, the linked signal resets to the computed value.
+
+```typescript
+// Simple form - derives directly from source
+const options = signal(['a', 'b', 'c'])
+const selected = linkedSignal(() => options.value[0])
+
+console.log(selected.value)  // 'a'
+selected.value = 'b'         // Manual override
+console.log(selected.value)  // 'b'
+
+options.value = ['x', 'y']   // Source changes
+flushSync()
+console.log(selected.value)  // 'x' (reset to computed value)
+```
+
+```typescript
+// Advanced form - with previous value tracking
+const items = signal([1, 2, 3])
+const selectedItem = linkedSignal({
+  source: () => items.value,
+  computation: (newItems, prev) => {
+    // Keep selection if still valid
+    if (prev && newItems.includes(prev.value)) {
+      return prev.value
+    }
+    return newItems[0]
+  }
+})
+```
+
+**Use cases:**
+- Form inputs that reset when parent data changes
+- Selection state that persists within valid options
+- Derived values that can be temporarily overridden
+
+### Selectors (Solid's O(n)→O(2) optimization)
+
+#### `createSelector<T, U = T>(source: () => T, fn?: (key: U, value: T) => boolean): SelectorFn<T, U>`
+
+Create a selector function for efficient list selection tracking.
+Instead of O(n) effects re-running, only affected items run = O(2).
+
+```typescript
+const selectedId = signal(1)
+const isSelected = createSelector(() => selectedId.value)
+
+// In a list of 1000 items:
+items.forEach(item => {
+  effect(() => {
+    // Only runs when THIS item's selection state changes!
+    // When selectedId changes from 1 to 2:
+    // - Only item 1's effect runs (was selected, now not)
+    // - Only item 2's effect runs (was not selected, now is)
+    // - Other 998 items' effects DON'T run
+    if (isSelected(item.id)) {
+      highlight(item)
+    } else {
+      unhighlight(item)
+    }
+  })
+})
+```
+
+### Effect Scope (Vue's lifecycle management)
+
+#### `effectScope(detached?: boolean): EffectScope`
+
+Create an effect scope to group effects for batch disposal with pause/resume support.
+
+```typescript
+const scope = effectScope()
+
+scope.run(() => {
+  // Effects created here are tracked by the scope
+  effect(() => console.log(count.value))
+  effect(() => console.log(name.value))
+
+  onScopeDispose(() => {
+    console.log('Cleaning up...')
+  })
+})
+
+// Later, dispose all effects at once
+scope.stop()
+```
+
+#### Pause and Resume
+
+```typescript
+scope.pause()    // Effects won't run while paused
+
+count.value = 5  // Effect doesn't run
+
+scope.resume()   // Pending updates run
+```
+
+#### `getCurrentScope(): EffectScope | null`
+
+Get the currently active effect scope.
+
+#### `onScopeDispose(fn: () => void): void`
+
+Register a cleanup function on the current scope.
 
 ### Batching & Scheduling
 

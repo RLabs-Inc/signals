@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'bun:test'
-import { signal, effect, proxy, toRaw, isReactive, flushSync, state } from '../../src/index.js'
+import { signal, effect, proxy, toRaw, isReactive, flushSync, state, bind, isBinding } from '../../src/index.js'
 
 describe('proxy', () => {
   it('makes object reactive', () => {
@@ -241,5 +241,79 @@ describe('state', () => {
     user.name = 'Jane'
     flushSync()
     expect(observed).toBe('Jane')
+  })
+})
+
+describe('BINDING_SYMBOL fix (TUI framework bug)', () => {
+  it('does not proxy Binding objects', () => {
+    const source = signal(42)
+    const binding = bind(source)
+
+    // Binding should not be proxied when stored in state
+    const container = state({ binding })
+
+    // The binding should still work (not be snapshotted)
+    expect(container.binding.value).toBe(42)
+    expect(isBinding(container.binding)).toBe(true)
+
+    // Changing the source should be reflected through the binding
+    source.value = 100
+    expect(container.binding.value).toBe(100)
+  })
+
+  it('keeps Binding getters live in state arrays', () => {
+    const sig1 = signal(1)
+    const sig2 = signal(2)
+    const sig3 = signal(3)
+
+    const bindings = state([bind(sig1), bind(sig2), bind(sig3)])
+
+    // All bindings should stay live
+    expect(bindings[0].value).toBe(1)
+    expect(bindings[1].value).toBe(2)
+    expect(bindings[2].value).toBe(3)
+
+    // Updates should propagate through bindings
+    sig1.value = 10
+    sig2.value = 20
+    sig3.value = 30
+
+    expect(bindings[0].value).toBe(10)
+    expect(bindings[1].value).toBe(20)
+    expect(bindings[2].value).toBe(30)
+  })
+
+  it('allows writing through bindings in state', () => {
+    const source = signal(0)
+    const container = state({ value: bind(source) })
+
+    // Write through the binding stored in state
+    container.value.value = 999
+
+    // Should update the original source
+    expect(source.value).toBe(999)
+  })
+
+  it('effects track binding reads correctly', () => {
+    const source = signal(1)
+    const container = state({ binding: bind(source) })
+
+    let effectRuns = 0
+    let observed = 0
+
+    effect(() => {
+      observed = container.binding.value
+      effectRuns++
+    })
+
+    flushSync()
+    expect(effectRuns).toBe(1)
+    expect(observed).toBe(1)
+
+    // Changing source should trigger effect
+    source.value = 42
+    flushSync()
+    expect(effectRuns).toBe(2)
+    expect(observed).toBe(42)
   })
 })

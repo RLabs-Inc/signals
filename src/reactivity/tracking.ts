@@ -44,6 +44,7 @@ import { scheduleEffect } from './scheduling.js'
  * Key optimizations:
  * 1. Version-based deduplication (rv) prevents duplicate dependencies
  * 2. skippedDeps optimization reuses existing dependency arrays
+ * 3. ITERATIVE derived chain updates to avoid stack overflow
  */
 export function get<T>(signal: Source<T>): T {
   // If we're inside a reaction, track this signal as a dependency
@@ -88,14 +89,104 @@ export function get<T>(signal: Source<T>): T {
   }
 
   // If this is a derived signal, check if it needs to be updated
+  // Use iterative update to avoid stack overflow on deep chains
   if ((signal.f & DERIVED) !== 0) {
-    const derived = signal as unknown as Derived
-    if (isDirty(derived)) {
-      updateDerived(derived)
-    }
+    updateDerivedChain(signal as unknown as Derived)
   }
 
   return signal.v
+}
+
+/**
+ * Counter to generate unique update cycle IDs.
+ * Used to track which deriveds have been processed in the current update cycle.
+ */
+let updateCycleId = 0
+
+/**
+ * Per-derived tracking of which cycle they were last processed in.
+ * Using a WeakMap to avoid memory leaks.
+ */
+const processedInCycle = new WeakMap<Derived, number>()
+
+/**
+ * Update a derived and all its dirty dependencies iteratively.
+ * This avoids stack overflow on deep derived chains.
+ */
+function updateDerivedChain(target: Derived): void {
+  // Quick check: if clean, nothing to do
+  if ((target.f & (DIRTY | MAYBE_DIRTY)) === 0) {
+    return
+  }
+
+  // Start a new update cycle
+  const cycleId = ++updateCycleId
+
+  // Collect all deriveds that need checking, walking from target to sources
+  const chain: Derived[] = [target]
+  processedInCycle.set(target, cycleId)
+  let idx = 0
+
+  while (idx < chain.length) {
+    const current = chain[idx]
+    idx++
+
+    // Skip if already clean
+    if ((current.f & (DIRTY | MAYBE_DIRTY)) === 0) {
+      continue
+    }
+
+    // Add dirty/maybe-dirty derived dependencies to the chain
+    const deps = current.deps
+    if (deps !== null) {
+      for (let i = 0; i < deps.length; i++) {
+        const dep = deps[i]
+        if (
+          (dep.f & DERIVED) !== 0 &&
+          (dep.f & (DIRTY | MAYBE_DIRTY)) !== 0 &&
+          processedInCycle.get(dep as unknown as Derived) !== cycleId
+        ) {
+          chain.push(dep as unknown as Derived)
+          processedInCycle.set(dep as unknown as Derived, cycleId)
+        }
+      }
+    }
+  }
+
+  // Update from the end (deepest dependencies) back to the target
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const current = chain[i]
+
+    // Skip if already clean (might have been cleaned by a previous iteration)
+    if ((current.f & (DIRTY | MAYBE_DIRTY)) === 0) {
+      continue
+    }
+
+    if ((current.f & DIRTY) !== 0) {
+      // Definitely dirty - must update
+      updateDerived(current)
+    } else {
+      // MAYBE_DIRTY - check if any dep actually changed
+      const deps = current.deps
+      let needsUpdate = false
+
+      if (deps !== null) {
+        for (let j = 0; j < deps.length; j++) {
+          if (deps[j].wv > current.wv) {
+            needsUpdate = true
+            break
+          }
+        }
+      }
+
+      if (needsUpdate) {
+        updateDerived(current)
+      } else {
+        // All deps are clean and unchanged - mark as clean
+        setSignalStatus(current, CLEAN)
+      }
+    }
+  }
 }
 
 // =============================================================================
@@ -147,28 +238,37 @@ export function set<T>(signal: Source<T>, value: T): T {
  * Mark all reactions of a signal with the given status
  * For effects: schedule them for execution
  * For deriveds: cascade MAYBE_DIRTY to their reactions
+ *
+ * ITERATIVE VERSION: Uses explicit stack to avoid stack overflow on deep chains
  */
 export function markReactions(signal: Source, status: number): void {
-  const reactions = signal.reactions
-  if (reactions === null) return
+  // Use iterative approach with explicit stack to handle deep chains
+  const stack: { signal: Source; status: number }[] = [{ signal, status }]
 
-  for (let i = 0; i < reactions.length; i++) {
-    const reaction = reactions[i]
-    const flags = reaction.f
+  while (stack.length > 0) {
+    const { signal: currentSignal, status: currentStatus } = stack.pop()!
+    const reactions = currentSignal.reactions
+    if (reactions === null) continue
 
-    // Skip if already DIRTY (don't downgrade to MAYBE_DIRTY)
-    const notDirty = (flags & DIRTY) === 0
+    for (let i = 0; i < reactions.length; i++) {
+      const reaction = reactions[i]
+      const flags = reaction.f
 
-    if (notDirty) {
-      setSignalStatus(reaction, status)
-    }
+      // Skip if already DIRTY (don't downgrade to MAYBE_DIRTY)
+      const notDirty = (flags & DIRTY) === 0
 
-    // For derived signals, cascade MAYBE_DIRTY to their dependents
-    if ((flags & DERIVED) !== 0) {
-      markReactions(reaction as unknown as Source, MAYBE_DIRTY)
-    } else if (notDirty) {
-      // For effects, schedule them for execution
-      scheduleEffect(reaction)
+      if (notDirty) {
+        setSignalStatus(reaction, currentStatus)
+      }
+
+      // For derived signals, cascade MAYBE_DIRTY to their dependents
+      if ((flags & DERIVED) !== 0) {
+        // Push to stack instead of recursive call
+        stack.push({ signal: reaction as unknown as Source, status: MAYBE_DIRTY })
+      } else if (notDirty) {
+        // For effects, schedule them for execution
+        scheduleEffect(reaction)
+      }
     }
   }
 }
@@ -194,6 +294,8 @@ export function setSignalStatus(signal: { f: number }, status: number): void {
  * DIRTY: definitely needs update
  * MAYBE_DIRTY: check dependencies to see if any actually changed
  * CLEAN: no update needed
+ *
+ * ITERATIVE VERSION: Uses explicit stack to avoid stack overflow on deep chains
  */
 export function isDirty(reaction: Reaction): boolean {
   // Definitely dirty
@@ -201,30 +303,97 @@ export function isDirty(reaction: Reaction): boolean {
     return true
   }
 
-  // Maybe dirty - check dependencies
-  if ((reaction.f & MAYBE_DIRTY) !== 0) {
-    const deps = reaction.deps
+  // Not maybe dirty - definitely clean
+  if ((reaction.f & MAYBE_DIRTY) === 0) {
+    return false
+  }
 
+  // MAYBE_DIRTY: need to check dependencies
+  // Use iterative approach to handle deep derived chains
+
+  // Stack of deriveds to check, in order from target back to sources
+  const toCheck: Reaction[] = [reaction]
+  // Stack of deriveds that need updating (populated during check, processed in reverse)
+  const toUpdate: Derived[] = []
+
+  // Phase 1: Walk dependency chain, find all MAYBE_DIRTY deriveds
+  let idx = 0
+  while (idx < toCheck.length) {
+    const current = toCheck[idx]
+    idx++
+
+    if ((current.f & DIRTY) !== 0) {
+      // Found a dirty one - will need to update from here
+      continue
+    }
+
+    if ((current.f & MAYBE_DIRTY) === 0) {
+      // Clean - skip
+      continue
+    }
+
+    const deps = current.deps
     if (deps !== null) {
       for (let i = 0; i < deps.length; i++) {
         const dep = deps[i]
-
-        // If dependency is a dirty derived, update it first
-        if ((dep.f & DERIVED) !== 0) {
-          if (isDirty(dep as unknown as Reaction)) {
-            updateDerived(dep as unknown as Derived)
-          }
-        }
-
-        // Check if dependency's write version is newer than our last update
-        if (dep.wv > reaction.wv) {
-          return true
+        // If dependency is a derived that might be dirty, add to check list
+        if ((dep.f & DERIVED) !== 0 && (dep.f & (DIRTY | MAYBE_DIRTY)) !== 0) {
+          toCheck.push(dep as unknown as Reaction)
         }
       }
     }
+  }
 
-    // All dependencies are clean, mark us as clean too
-    setSignalStatus(reaction, CLEAN)
+  // Phase 2: Process from deepest (end of toCheck) back to shallowest
+  // Update any dirty deriveds so their write versions are current
+  for (let i = toCheck.length - 1; i >= 0; i--) {
+    const current = toCheck[i]
+
+    // Only update if this is actually a Derived (not an Effect)
+    if ((current.f & DERIVED) === 0) {
+      continue
+    }
+
+    if ((current.f & DIRTY) !== 0) {
+      // Definitely dirty - update it
+      updateDerived(current as unknown as Derived)
+    } else if ((current.f & MAYBE_DIRTY) !== 0) {
+      // Check if any dependency has newer write version
+      const deps = current.deps
+      let needsUpdate = false
+
+      if (deps !== null) {
+        for (let j = 0; j < deps.length; j++) {
+          if (deps[j].wv > current.wv) {
+            needsUpdate = true
+            break
+          }
+        }
+      }
+
+      if (needsUpdate) {
+        updateDerived(current as unknown as Derived)
+      } else {
+        // All dependencies are clean, mark us as clean too
+        setSignalStatus(current, CLEAN)
+      }
+    }
+  }
+
+  // Now check if the original reaction is dirty
+  // (it will have been updated if needed in the loop above)
+  if ((reaction.f & DIRTY) !== 0) {
+    return true
+  }
+
+  // Check write versions of direct dependencies
+  const deps = reaction.deps
+  if (deps !== null) {
+    for (let i = 0; i < deps.length; i++) {
+      if (deps[i].wv > reaction.wv) {
+        return true
+      }
+    }
   }
 
   return false

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import type { Source } from '../core/types.js'
-import { STATE_SYMBOL, UNINITIALIZED } from '../core/constants.js'
+import { STATE_SYMBOL, UNINITIALIZED, BINDING_SYMBOL } from '../core/constants.js'
 import { source } from '../primitives/signal.js'
 import { get, set } from '../reactivity/tracking.js'
 import {
@@ -13,6 +13,13 @@ import {
   readVersion,
   setActiveReaction,
 } from '../core/globals.js'
+
+// =============================================================================
+// PROXY CACHE (live-style optimization)
+// =============================================================================
+
+/** WeakMap to cache proxies for objects (prevents creating multiple proxies for same object) */
+const proxyCache = new WeakMap<object, object>()
 
 // =============================================================================
 // AUTO-CLEANUP VIA FINALIZATION REGISTRY
@@ -47,9 +54,17 @@ const proxyCleanup = new FinalizationRegistry<ProxyCleanupData>((data) => {
 /**
  * Check if a value should be proxied
  * Only plain objects and arrays are proxied
+ *
+ * CRITICAL: Don't proxy Binding objects! They need their .value getter
+ * to remain live, not be snapshotted by the proxy. This was the TUI framework bug.
  */
 function shouldProxy(value: unknown): value is object {
   if (value === null || typeof value !== 'object') {
+    return false
+  }
+
+  // CRITICAL: Don't proxy Binding objects - they have live .value getters
+  if (BINDING_SYMBOL in value) {
     return false
   }
 
@@ -89,6 +104,12 @@ export function proxy<T extends object>(value: T): T {
   // Don't re-proxy
   if (!shouldProxy(value) || isProxy(value)) {
     return value
+  }
+
+  // Return cached proxy if exists (live-style optimization)
+  const cached = proxyCache.get(value)
+  if (cached) {
+    return cached as T
   }
 
   // Per-property signals (created lazily on access)
@@ -183,9 +204,9 @@ export function proxy<T extends object>(value: T): T {
     },
 
     // =========================================================================
-    // SET TRAP - Write property with triggering
+    // SET TRAP - Write property with triggering (OPTIMIZED)
     // =========================================================================
-    set(target, prop, newValue, receiver) {
+    set(target, prop, newValue) {
       const exists = prop in target
 
       // Get or create source
@@ -196,48 +217,53 @@ export function proxy<T extends object>(value: T): T {
           return false
         }
 
+        // Create source - use withParent only if in different read cycle
         s = withParent(() => source(undefined))
         sources.set(prop, s)
       }
 
-      // Proxy the new value if needed
-      const proxied = withParent(() =>
-        shouldProxy(newValue) ? proxy(newValue as object) : newValue
-      )
+      // OPTIMIZATION: Only wrap in withParent if value needs proxying
+      // For primitives (most common case), skip the closure entirely
+      let proxied: unknown
+      if (shouldProxy(newValue)) {
+        proxied = withParent(() => proxy(newValue as object))
+      } else {
+        proxied = newValue
+      }
 
       // Update the source (triggers reactions)
       set(s, proxied)
 
-      // Update the actual target
-      Reflect.set(target, prop, newValue, receiver)
+      // OPTIMIZATION: Direct assignment instead of Reflect.set (~79ns savings)
+      ;(target as Record<PropertyKey, unknown>)[prop] = newValue
 
-      // Handle array length changes
-      if (isArray && prop === 'length') {
-        const oldLength = (s as Source<number>).v
-        const newLength = newValue as number
+      // Handle array-specific cases only for arrays
+      if (isArray) {
+        if (prop === 'length') {
+          const oldLength = (s as Source<number>).v
+          const newLength = newValue as number
 
-        // Mark removed indices as UNINITIALIZED
-        for (let i = newLength; i < oldLength; i++) {
-          const indexKey = String(i)
-          const indexSource = sources.get(indexKey)
+          // Mark removed indices as UNINITIALIZED
+          for (let i = newLength; i < oldLength; i++) {
+            const indexKey = String(i)
+            const indexSource = sources.get(indexKey)
 
-          if (indexSource !== undefined) {
-            set(indexSource, UNINITIALIZED)
-          } else if (i in target) {
-            // Create source marked as deleted
-            const deletedSource = withParent(() => source(UNINITIALIZED))
-            sources.set(indexKey, deletedSource)
+            if (indexSource !== undefined) {
+              set(indexSource, UNINITIALIZED)
+            } else if (i in target) {
+              // Create source marked as deleted
+              const deletedSource = withParent(() => source(UNINITIALIZED))
+              sources.set(indexKey, deletedSource)
+            }
           }
-        }
-      }
-
-      // Handle array index that extends length
-      if (isArray && typeof prop === 'string') {
-        const index = Number(prop)
-        if (Number.isInteger(index) && index >= 0) {
-          const lengthSource = sources.get('length') as Source<number> | undefined
-          if (lengthSource !== undefined && index >= lengthSource.v) {
-            set(lengthSource, index + 1)
+        } else if (typeof prop === 'string') {
+          // Handle array index that extends length
+          const index = Number(prop)
+          if (Number.isInteger(index) && index >= 0) {
+            const lengthSource = sources.get('length') as Source<number> | undefined
+            if (lengthSource !== undefined && index >= lengthSource.v) {
+              set(lengthSource, index + 1)
+            }
           }
         }
       }
@@ -251,7 +277,7 @@ export function proxy<T extends object>(value: T): T {
     },
 
     // =========================================================================
-    // DELETE PROPERTY TRAP
+    // DELETE PROPERTY TRAP (OPTIMIZED)
     // =========================================================================
     deleteProperty(target, prop) {
       const exists = prop in target
@@ -271,7 +297,8 @@ export function proxy<T extends object>(value: T): T {
         set(version, get(version) + 1)
       }
 
-      return Reflect.deleteProperty(target, prop)
+      // OPTIMIZATION: Direct delete instead of Reflect.deleteProperty
+      return delete (target as Record<PropertyKey, unknown>)[prop]
     },
 
     // =========================================================================
@@ -337,6 +364,9 @@ export function proxy<T extends object>(value: T): T {
 
   // Register for automatic cleanup when proxy is GC'd
   proxyCleanup.register(proxyObj, { sources, version })
+
+  // Cache the proxy (live-style optimization)
+  proxyCache.set(value, proxyObj)
 
   return proxyObj as T
 }

@@ -28,6 +28,7 @@ import {
 } from '../reactivity/tracking.js'
 import { scheduleEffect, setUpdateEffectImpl } from '../reactivity/scheduling.js'
 import { setDestroyEffectImpl } from './derived.js'
+import { registerEffectWithScope } from './scope.js'
 
 // =============================================================================
 // CREATE EFFECT (Internal)
@@ -61,6 +62,9 @@ export function createEffect(
     next: null,
     wv: 0,
   }
+
+  // Register with active scope (for effectScope() support)
+  registerEffectWithScope(effect)
 
   // Run immediately if sync, otherwise schedule
   if (sync) {

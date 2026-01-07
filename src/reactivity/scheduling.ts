@@ -4,7 +4,7 @@
 // ============================================================================
 
 import type { Reaction, Effect } from '../core/types.js'
-import { ROOT_EFFECT, BRANCH_EFFECT, CLEAN } from '../core/constants.js'
+import { ROOT_EFFECT, BRANCH_EFFECT, CLEAN, INERT } from '../core/constants.js'
 import {
   batchDepth,
   addPendingReaction,
@@ -82,6 +82,11 @@ export function flushEffects(): void {
   const roots = clearQueuedRootEffects()
 
   for (const root of roots) {
+    // Skip inert (paused) effects
+    if ((root.f & INERT) !== 0) {
+      continue
+    }
+
     // Update the root if dirty
     if (isDirty(root)) {
       updateEffectImpl(root)
@@ -101,7 +106,8 @@ function processEffectTree(effect: Effect): void {
   while (child !== null) {
     const next = child.next
 
-    if (isDirty(child)) {
+    // Skip inert (paused) effects
+    if ((child.f & INERT) === 0 && isDirty(child)) {
       updateEffectImpl(child)
     }
 
@@ -122,6 +128,11 @@ export function flushPendingReactions(): void {
   clearPendingReactions()
 
   for (const reaction of reactions) {
+    // Skip inert (paused) effects
+    if ((reaction.f & INERT) !== 0) {
+      continue
+    }
+
     if (isDirty(reaction)) {
       // Check if it's an effect by looking for effect-specific properties
       if ('parent' in reaction) {
@@ -179,6 +190,11 @@ export function flushSync<T>(fn?: () => T): T | undefined {
       }
 
       for (const root of roots) {
+        // Skip inert (paused) effects
+        if ((root.f & INERT) !== 0) {
+          continue
+        }
+
         if (isDirty(root)) {
           updateEffectImpl(root)
         }
