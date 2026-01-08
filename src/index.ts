@@ -163,6 +163,7 @@ export type {
   // Utility types
   Equals,
   Uninitialized,
+  ExtractInner,
 } from './core/types.js'
 
 export type { Binding, ReadonlyBinding } from './primitives/bind.js'

@@ -3,7 +3,7 @@
 // Creates a reactive link/pointer to another reactive value
 // ============================================================================
 
-import type { WritableSignal, ReadableSignal, Source } from '../core/types.js'
+import type { WritableSignal, ReadableSignal, Source, ExtractInner } from '../core/types.js'
 import { BINDING_SYMBOL } from '../core/constants.js'
 import { signal, getSource } from './signal.js'
 
@@ -110,7 +110,7 @@ export function bind<T>(source: ReadableSignal<T>): ReadonlyBinding<T>
 export function bind<T>(source: Binding<T>): Binding<T>
 export function bind<T>(source: ReadonlyBinding<T>): ReadonlyBinding<T>
 export function bind<T>(source: () => T): ReadonlyBinding<T>  // Getter function (read-only)
-export function bind<T>(source: T): Binding<T>  // Raw values
+export function bind<T>(source: T): Binding<ExtractInner<T>>  // Raw values or Reactive<U> unions
 export function bind<T>(
   source: T | (() => T) | WritableSignal<T> | ReadableSignal<T> | Binding<T> | ReadonlyBinding<T>
 ): Binding<T> | ReadonlyBinding<T> {

@@ -137,6 +137,27 @@ export interface DerivedSignal<T> extends ReadableSignal<T> {}
 export type DisposeFn = () => void
 
 // =============================================================================
+// REACTIVE UNION TYPE HELPER
+// =============================================================================
+
+/**
+ * Extract the inner type T from reactive wrappers.
+ *
+ * When given a union like `T | WritableSignal<T> | Binding<T>`, this extracts
+ * just T. Conditional types distribute over unions, so:
+ *
+ * ExtractInner<number | WritableSignal<number>> = number | number = number
+ *
+ * This is essential for bind() to correctly infer return types when given
+ * "Reactive<T>" union types (T | WritableSignal<T> | Binding<T> | ReadonlyBinding<T>).
+ */
+export type ExtractInner<T> =
+  T extends WritableSignal<infer U> ? U :
+  T extends ReadableSignal<infer U> ? U :
+  T extends { readonly value: infer U } ? U :  // Catches Binding/ReadonlyBinding
+  T
+
+// =============================================================================
 // UNINITIALIZED TYPE
 // =============================================================================
 
