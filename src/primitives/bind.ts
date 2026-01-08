@@ -217,6 +217,11 @@ export function unwrap<T>(value: T | Binding<T> | ReadonlyBinding<T>): T {
   if (isBinding(value)) {
     return value.value
   }
+  // Also handle signal/derived objects that have .value property
+  // This enables unified DX: {mySignal} instead of {mySignal.value}
+  if (value !== null && typeof value === 'object' && 'value' in value) {
+    return (value as { value: T }).value
+  }
   return value
 }
 

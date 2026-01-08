@@ -257,7 +257,18 @@ console.log(readonly.value)  // 0
 // Check if a value is a binding
 isBinding(maybeBinding)  // true or false
 
-// Get value from binding or return value directly
+// Get value from binding, signal, derived, or return plain value directly
+// Works with ALL reactive types for unified value access
+const count = signal(42)
+const doubled = derived(() => count.value * 2)
+const bound = bind(count)
+
+unwrap(count)     // 42 (extracts .value from signal)
+unwrap(doubled)   // 84 (extracts .value from derived)
+unwrap(bound)     // 42 (extracts .value from binding)
+unwrap('static')  // 'static' (returns plain values as-is)
+
+// Great for mapping mixed arrays
 const arr: (string | Binding<string>)[] = ['static', bind(signal('dynamic'))]
 arr.map(unwrap)  // ['static', 'dynamic']
 ```
