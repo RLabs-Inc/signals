@@ -100,6 +100,22 @@ export const shallowEquals: Equals = (oldValue, newValue) => {
 }
 
 // =============================================================================
+// DEEP EQUALITY (Bun.deepEquals)
+// =============================================================================
+
+/**
+ * Deep structural equality using Bun.deepEquals.
+ * Used as default for derived() and linkedSignal() to prevent unnecessary
+ * propagation when computed values are structurally identical.
+ *
+ * Falls back to shallowEquals in non-Bun environments.
+ */
+export const deepEquals: Equals =
+  typeof Bun !== 'undefined' && typeof Bun.deepEquals === 'function'
+    ? (a, b) => Bun.deepEquals(a, b)
+    : shallowEquals
+
+// =============================================================================
 // FACTORY FUNCTIONS
 // =============================================================================
 

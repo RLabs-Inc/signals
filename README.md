@@ -557,32 +557,48 @@ if (isReactive(value)) {
 Control when signals trigger updates:
 
 ```typescript
-import { signal, equals, safeEquals, shallowEquals, neverEquals, alwaysEquals, createEquals } from '@rlabs-inc/signals'
+import { signal, derived, equals, deepEquals, safeEquals, shallowEquals, neverEquals, alwaysEquals, createEquals } from '@rlabs-inc/signals'
 
-// Default - uses Object.is
-const a = signal(0)  // Uses equals by default
+// signal() - uses Object.is (reference equality)
+const a = signal(0)
+
+// derived() - uses Bun.deepEquals (structural equality) by default
+// This prevents unnecessary propagation when computed values are structurally identical
+const items = signal([1, 2, 3])
+const doubled = derived(() => items.value.map(x => x * 2))
+// If doubled produces [2, 4, 6] again, downstream effects won't re-run
+
+// Deep equality - uses Bun.deepEquals (36ns for small objects!)
+const c = signal({ a: 1 }, { equals: deepEquals })
+c.value = { a: 1 }  // Won't trigger - deeply equal
 
 // Safe equality - handles NaN correctly
-const b = signal(NaN, { equals: safeEquals })
+const d = signal(NaN, { equals: safeEquals })
 
 // Shallow comparison - compares one level deep
-const c = signal({ a: 1 }, { equals: shallowEquals })
-c.value = { a: 1 }  // Won't trigger - shallowly equal
+const e = signal({ a: 1 }, { equals: shallowEquals })
 
 // Always trigger updates
-const d = signal(0, { equals: neverEquals })
-d.value = 0  // Still triggers!
+const f = signal(0, { equals: neverEquals })
+f.value = 0  // Still triggers!
 
 // Never trigger updates
-const e = signal(0, { equals: alwaysEquals })
-e.value = 100  // Doesn't trigger
+const g = signal(0, { equals: alwaysEquals })
+g.value = 100  // Doesn't trigger
 
 // Custom equality
 const customEquals = createEquals((a, b) =>
   JSON.stringify(a) === JSON.stringify(b)
 )
-const f = signal([], { equals: customEquals })
+const h = signal([], { equals: customEquals })
 ```
+
+**Default equality by primitive:**
+| Primitive | Default | Reason |
+|-----------|---------|--------|
+| `signal()` | `Object.is` | User-controlled input - reference equality |
+| `derived()` | `Bun.deepEquals` | Computed output - structural equality prevents unnecessary work |
+| `linkedSignal()` | `Bun.deepEquals` | Computed output - structural equality |
 
 ---
 

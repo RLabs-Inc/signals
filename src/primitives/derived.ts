@@ -13,7 +13,7 @@ import {
   UNINITIALIZED,
 } from '../core/constants.js'
 import { activeReaction, activeEffect, incrementWriteVersion } from '../core/globals.js'
-import { equals as defaultEquals } from '../reactivity/equality.js'
+import { deepEquals as defaultEquals } from '../reactivity/equality.js'
 import {
   get,
   updateReaction,

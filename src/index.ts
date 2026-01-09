@@ -45,6 +45,7 @@ export { flushSync, tick } from './reactivity/scheduling.js'
 
 export {
   equals,
+  deepEquals,
   safeEquals,
   safeNotEqual,
   shallowEquals,

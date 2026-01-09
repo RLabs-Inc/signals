@@ -13,6 +13,7 @@ import { derived } from './derived.js'
 import { effect } from './effect.js'
 import { untrack } from '../reactivity/batching.js'
 import { flushSync } from '../reactivity/scheduling.js'
+import { deepEquals } from '../reactivity/equality.js'
 
 // =============================================================================
 // TYPES
@@ -95,7 +96,7 @@ export function linkedSignal<S, D>(
   // Parse configuration
   let sourceFn: () => S
   let computation: (source: S, previous?: { source: S; value: D }) => D
-  let equalsFn: Equals<D> = Object.is
+  let equalsFn: Equals<D> = deepEquals
 
   if (typeof config === 'function') {
     // Short form: the function is both source and computation
