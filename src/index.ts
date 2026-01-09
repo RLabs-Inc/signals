@@ -21,7 +21,7 @@ setProxyFn(proxy)
 export { signal, source, mutableSource, state, stateRaw } from './primitives/signal.js'
 export { derived, createDerived, disconnectDerived } from './primitives/derived.js'
 export { effect, createEffect, updateEffect, destroyEffect } from './primitives/effect.js'
-export { bind, bindReadonly, isBinding, unwrap, signals } from './primitives/bind.js'
+export { bind, bindReadonly, isBinding, unwrap, signals, disconnectBinding, bindingHasInternalSource } from './primitives/bind.js'
 export { linkedSignal, isLinkedSignal } from './primitives/linked.js'
 export { createSelector } from './primitives/selector.js'
 export { effectScope, getCurrentScope, onScopeDispose } from './primitives/scope.js'
@@ -73,6 +73,7 @@ export {
   markReactions,
   updateReaction,
   removeReactions,
+  disconnectSource,
 } from './reactivity/tracking.js'
 
 // =============================================================================

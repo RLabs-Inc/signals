@@ -417,6 +417,41 @@ export function setUpdateDerivedImpl(impl: (derived: Derived) => void): void {
 }
 
 // =============================================================================
+// DISCONNECT SOURCE - Break a source from the reactive graph
+// =============================================================================
+
+/**
+ * Disconnect a source from all its reactions.
+ * This breaks the circular reference between Source.reactions and Reaction.deps,
+ * allowing both to be garbage collected.
+ *
+ * Use this when disposing of a signal/binding that was tracked by deriveds/effects.
+ */
+export function disconnectSource(source: Source): void {
+  const reactions = source.reactions
+  if (reactions !== null) {
+    // Remove this source from each reaction's deps array
+    for (let i = 0; i < reactions.length; i++) {
+      const reaction = reactions[i]
+      const deps = reaction.deps
+      if (deps !== null) {
+        const idx = deps.indexOf(source)
+        if (idx !== -1) {
+          // Swap with last and pop for O(1) removal
+          const last = deps.length - 1
+          if (idx !== last) {
+            deps[idx] = deps[last]
+          }
+          deps.pop()
+        }
+      }
+    }
+    // Clear reactions array
+    source.reactions = null
+  }
+}
+
+// =============================================================================
 // REMOVE REACTIONS - Clean up stale dependencies
 // =============================================================================
 

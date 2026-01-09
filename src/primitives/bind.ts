@@ -6,6 +6,17 @@
 import type { WritableSignal, ReadableSignal, Source, ExtractInner } from '../core/types.js'
 import { BINDING_SYMBOL } from '../core/constants.js'
 import { signal, getSource } from './signal.js'
+import { disconnectSource } from '../reactivity/tracking.js'
+
+// =============================================================================
+// INTERNAL SOURCE SYMBOL
+// =============================================================================
+
+/**
+ * Symbol to access the internal Source from a binding.
+ * Used by disconnectBinding() to break reactive links.
+ */
+const BINDING_SOURCE_SYMBOL = Symbol('binding.source')
 
 // =============================================================================
 // AUTO-CLEANUP VIA FINALIZATION REGISTRY
@@ -15,10 +26,13 @@ import { signal, getSource } from './signal.js'
  * FinalizationRegistry for automatic binding cleanup.
  * When a binding is garbage collected, we clean up the internal signal
  * (if one was created for a raw value) to prevent memory leaks.
+ *
+ * NOTE: This only works when there are no circular references.
+ * For proper cleanup when circular refs exist, use disconnectBinding().
  */
 const bindingCleanup = new FinalizationRegistry<Source<unknown>>((internalSource) => {
-  // Break the reactions links so the source can be GC'd
-  internalSource.reactions = null
+  // Use disconnectSource to properly break the reactive graph
+  disconnectSource(internalSource)
 })
 
 // =============================================================================
@@ -105,6 +119,21 @@ function isGetter<T>(value: unknown): value is () => T {
   return typeof value === 'function'
 }
 
+/**
+ * Check if a value is a static primitive that doesn't need reactive tracking.
+ * These values never change, so wrapping them in signals is wasteful.
+ */
+function isStaticPrimitive(value: unknown): boolean {
+  const type = typeof value
+  return (
+    value === null ||
+    value === undefined ||
+    type === 'number' ||
+    type === 'string' ||
+    type === 'boolean'
+  )
+}
+
 export function bind<T>(source: WritableSignal<T>): Binding<T>
 export function bind<T>(source: ReadableSignal<T>): ReadonlyBinding<T>
 export function bind<T>(source: Binding<T>): Binding<T>
@@ -117,52 +146,117 @@ export function bind<T>(
   // Handle getter functions - enables reactive binding to state() properties
   // Example: bind(() => props.content) - reads through state proxy in reactive context
   if (isGetter<T>(source)) {
-    return {
+    const getterBinding = {
       [BINDING_SYMBOL]: true,
+      [BINDING_SOURCE_SYMBOL]: null as Source<unknown> | null,
       get value(): T {
         return source()  // Calling getter creates dependency on accessed state!
       },
-    } as ReadonlyBinding<T>
+    }
+    return getterBinding as unknown as ReadonlyBinding<T>
   }
 
   // If source is already a signal or binding, create a forwarding binding
-  // If source is a raw value, wrap it in a signal first
-
-  let actualSource: WritableSignal<T> | ReadableSignal<T> | Binding<T> | ReadonlyBinding<T>
-  let internalSource: Source<unknown> | null = null
-
   if (isBinding(source) || isSignal(source)) {
-    // Source is reactive - bind directly to it
-    actualSource = source as WritableSignal<T> | ReadableSignal<T> | Binding<T> | ReadonlyBinding<T>
-  } else {
-    // Source is a raw value - wrap in a signal
-    const sig = signal(source as T)
-    actualSource = sig
-    // Get the internal Source for cleanup registration
-    internalSource = getSource(sig) ?? null
+    // Source is reactive - bind directly to it (no internal source needed)
+    const actualSource = source as WritableSignal<T> | ReadableSignal<T> | Binding<T> | ReadonlyBinding<T>
+    const forwardBinding = {
+      [BINDING_SYMBOL]: true,
+      [BINDING_SOURCE_SYMBOL]: null as Source<unknown> | null,
+
+      get value(): T {
+        return actualSource.value
+      },
+
+      set value(v: T) {
+        ;(actualSource as WritableSignal<T>).value = v
+      },
+    }
+    return forwardBinding as unknown as Binding<T>
   }
+
+  // OPTIMIZATION: Static primitives don't need reactive tracking
+  // They never change, so no signal is needed. This saves ~0.3KB per binding.
+  if (isStaticPrimitive(source)) {
+    let staticValue = source as T
+    const staticBinding = {
+      [BINDING_SYMBOL]: true,
+      [BINDING_SOURCE_SYMBOL]: null as Source<unknown> | null,
+
+      get value(): T {
+        return staticValue
+      },
+
+      set value(v: T) {
+        staticValue = v
+      },
+    }
+    return staticBinding as unknown as Binding<T>
+  }
+
+  // Source is a non-primitive raw value - wrap in a signal for reactivity
+  const sig = signal(source as T)
+  const internalSource = getSource(sig) ?? null
 
   const binding = {
     [BINDING_SYMBOL]: true,
+    [BINDING_SOURCE_SYMBOL]: internalSource,
 
     get value(): T {
-      return actualSource.value
+      return sig.value
     },
 
     set value(v: T) {
-      // TypeScript will prevent this at compile time for ReadableSignal/ReadonlyBinding
-      // But at runtime, we need to handle the case
-      ;(actualSource as WritableSignal<T>).value = v
+      sig.value = v
     },
   }
 
   // Register for automatic cleanup when binding is GC'd
-  // Only needed if we created an internal signal for a raw value
   if (internalSource !== null) {
     bindingCleanup.register(binding, internalSource)
   }
 
   return binding
+}
+
+// =============================================================================
+// DISCONNECT BINDING - Manual cleanup for edge cases
+// =============================================================================
+
+/**
+ * Disconnect a binding from the reactive graph.
+ *
+ * In most cases, this is NOT needed because:
+ * 1. Static primitives (numbers, strings, booleans) don't create internal signals
+ * 2. Bindings to existing signals forward to them (no internal source)
+ * 3. FinalizationRegistry handles cleanup when objects are GC'd
+ *
+ * Use this ONLY when you have circular references that prevent GC,
+ * such as when a binding's internal source is tracked by a long-lived derived.
+ *
+ * @example
+ * ```ts
+ * const binding = bind(someNonPrimitiveValue)
+ * // ... later, when cleaning up:
+ * disconnectBinding(binding)  // Breaks reactive links, allows GC
+ * ```
+ */
+export function disconnectBinding(binding: Binding<unknown> | ReadonlyBinding<unknown> | null | undefined): void {
+  if (binding === null || binding === undefined) return
+
+  const internalSource = (binding as unknown as Record<symbol, Source<unknown> | null>)[BINDING_SOURCE_SYMBOL]
+  if (internalSource !== null && internalSource !== undefined) {
+    disconnectSource(internalSource)
+  }
+}
+
+/**
+ * Check if a binding has an internal source that may need cleanup.
+ * Static primitives and forwarding bindings return false.
+ */
+export function bindingHasInternalSource(binding: Binding<unknown> | ReadonlyBinding<unknown>): boolean {
+  const internalSource = (binding as unknown as Record<symbol, Source<unknown> | null>)[BINDING_SOURCE_SYMBOL]
+  return internalSource !== null && internalSource !== undefined
 }
 
 // =============================================================================

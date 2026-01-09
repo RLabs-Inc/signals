@@ -114,6 +114,32 @@ When paused, effects are still marked dirty but not scheduled. On resume, all di
 2. **Effect not re-running** - Check if you're reading signals inside `untrack()`
 3. **Memory leaks** - Always dispose effects when done: `const dispose = effect(...); dispose()`
 4. **Binding to proxy objects** - Don't bind() to state() objects directly; bind to individual properties or use signals()
+5. **Circular references preventing GC** - Use `disconnectBinding()` to break reactive links when disposing components
+
+## Memory Optimization (v1.5.0)
+
+### Static Primitive Optimization
+`bind()` now detects static primitives (numbers, strings, booleans, null, undefined) and creates lightweight bindings WITHOUT internal signals. This saves ~0.3KB per binding and avoids creating reactive connections that need cleanup.
+
+### disconnectSource() / disconnectBinding()
+For cases where circular references prevent GC (e.g., a binding's internal source is in a long-lived derived's deps), use:
+```typescript
+import { disconnectBinding, disconnectSource } from '@rlabs-inc/signals'
+
+// When disposing a binding
+disconnectBinding(myBinding)  // Breaks reactive links
+
+// Low-level: disconnect a source directly
+disconnectSource(mySource)
+```
+
+### When Manual Cleanup Is Needed
+In most cases, cleanup is automatic because:
+1. Static primitives don't create internal signals (no circular refs)
+2. Bindings to existing signals just forward (no internal source)
+3. FinalizationRegistry handles cleanup when objects are GC'd
+
+Use `disconnectBinding()` only when you have long-lived reactions tracking short-lived bindings.
 
 ## Testing
 
@@ -141,9 +167,11 @@ it('THE NIGHTMARE TEST - 7 levels deep', () => {
 - `effect.tracking()` - Check tracking context
 
 ### Bindings
-- `bind(source)` - Two-way binding
+- `bind(source)` - Two-way binding (optimized for static primitives)
 - `bindReadonly(source)` - Read-only binding
 - `isBinding(v)` / `unwrap(v)` - Utilities
+- `disconnectBinding(b)` - Break reactive links for cleanup
+- `bindingHasInternalSource(b)` - Check if binding needs cleanup
 
 ### Advanced
 - `linkedSignal(() => ...)` - Reset on source change (Angular)
