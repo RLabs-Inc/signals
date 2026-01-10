@@ -275,6 +275,108 @@ arr.map(unwrap)  // ['static', 'dynamic']
 
 ---
 
+## Slots (bind() on steroids)
+
+Slots are stable reactive cells that can point to different sources. Unlike `bind()`, a Slot is never replaced - you mutate its source. This ensures deriveds ALWAYS track changes correctly.
+
+### slot
+
+Create a single reactive slot.
+
+```typescript
+slot<T>(initial?: T): Slot<T>
+```
+
+```typescript
+const mySlot = slot<string>('hello')
+
+// Static value
+console.log(mySlot.value)  // 'hello'
+mySlot.source = 'world'
+console.log(mySlot.value)  // 'world'
+
+// Point to a signal
+const name = signal('Alice')
+mySlot.source = name
+console.log(mySlot.value)  // 'Alice'
+name.value = 'Bob'
+console.log(mySlot.value)  // 'Bob'
+
+// Write through to signal (two-way binding!)
+mySlot.set('Charlie')
+console.log(name.value)    // 'Charlie'
+
+// Point to a getter (read-only, auto-tracks)
+const count = signal(5)
+mySlot.source = () => `Count: ${count.value}`
+console.log(mySlot.value)  // 'Count: 5'
+count.value = 10
+console.log(mySlot.value)  // 'Count: 10'
+```
+
+**Key difference from bind():**
+- `bind()` creates a NEW object each time - if you replace it, deriveds tracking the old one miss updates
+- `slot()` is STABLE - you change its source, and all dependents are notified
+
+### slotArray
+
+Create an array of slots for efficient reactive arrays.
+
+```typescript
+slotArray<T>(defaultValue?: T): SlotArray<T>
+```
+
+```typescript
+const textContent = slotArray<string>('')
+
+// Set source (component setup)
+textContent.setSource(0, props.content)
+
+// Read value (auto-unwraps, auto-tracks!)
+const content = textContent[0]
+
+// Write value (two-way binding)
+textContent.setValue(0, 'new text')
+
+// Get raw slot for advanced use
+const rawSlot = textContent.slot(0)
+```
+
+**SlotArray methods:**
+| Method | Description |
+|--------|-------------|
+| `arr[i]` | Read value at index (auto-unwraps, auto-tracks) |
+| `arr.setSource(i, src)` | Set what slot i points to |
+| `arr.setValue(i, val)` | Write through to slot i's source |
+| `arr.slot(i)` | Get the raw Slot at index |
+| `arr.ensureCapacity(n)` | Expand to at least n slots |
+| `arr.clear(i)` | Reset slot i to default |
+
+### TUI-style use case
+
+Slots are designed for frameworks like TUI where:
+1. Components write sources to arrays
+2. Pipelines read from arrays reactively
+3. Two-way binding enables inputs
+
+```typescript
+// Component setup
+const count = signal(0)
+textContent.setSource(index, () => `Count: ${count.value}`)
+
+// Pipeline (derived) reads automatically
+// When count changes, pipeline re-renders!
+
+// For inputs - two-way binding
+const username = signal('')
+textContent.setSource(inputIndex, username)
+// User types:
+textContent.setValue(inputIndex, 'alice')
+// username.value is now 'alice'!
+```
+
+---
+
 ## Advanced Features
 
 ### linkedSignal (Angular's killer feature)
@@ -678,6 +780,7 @@ This library is designed for performance:
 | `linkedSignal()` | Yes | - | - | Yes | - |
 | `createSelector()` | Yes | - | - | - | Yes |
 | `effectScope()` | Yes | - | Yes | - | - |
+| `slot()` / `slotArray()` | Yes | - | - | - | - |
 | Compiler required | No | Yes | No | No | No |
 | DOM integration | No | Yes | Yes | Yes | Yes |
 

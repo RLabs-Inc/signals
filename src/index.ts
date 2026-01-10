@@ -25,6 +25,7 @@ export { bind, bindReadonly, isBinding, unwrap, signals, disconnectBinding, bind
 export { linkedSignal, isLinkedSignal } from './primitives/linked.js'
 export { createSelector } from './primitives/selector.js'
 export { effectScope, getCurrentScope, onScopeDispose } from './primitives/scope.js'
+export { slot, slotArray, isSlot, hasSlot } from './primitives/slot.js'
 
 // =============================================================================
 // DEEP REACTIVITY
@@ -112,6 +113,7 @@ export {
   REACTIVE_MARKER,
   BINDING_SYMBOL,
   LINKED_SYMBOL,
+  SLOT_SYMBOL,
 } from './core/constants.js'
 
 // =============================================================================
@@ -172,3 +174,4 @@ export type { Binding, ReadonlyBinding } from './primitives/bind.js'
 export type { LinkedSignalOptions, LinkedSignalConfig } from './primitives/linked.js'
 export type { SelectorFn } from './primitives/selector.js'
 export type { EffectScope } from './primitives/scope.js'
+export type { Slot, SlotArray } from './primitives/slot.js'

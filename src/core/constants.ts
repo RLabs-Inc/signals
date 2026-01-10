@@ -95,6 +95,9 @@ export const BINDING_SYMBOL: unique symbol = Symbol.for('rlabs.signals.binding')
 /** Symbol to identify LinkedSignal objects */
 export const LINKED_SYMBOL: unique symbol = Symbol.for('rlabs.signals.linked')
 
+/** Symbol to identify Slot objects */
+export const SLOT_SYMBOL: unique symbol = Symbol.for('rlabs.signals.slot')
+
 // =============================================================================
 // SOURCE FLAG
 // =============================================================================
