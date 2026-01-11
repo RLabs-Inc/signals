@@ -26,6 +26,7 @@ export { linkedSignal, isLinkedSignal } from './primitives/linked.js'
 export { createSelector } from './primitives/selector.js'
 export { effectScope, getCurrentScope, onScopeDispose } from './primitives/scope.js'
 export { slot, slotArray, isSlot, hasSlot } from './primitives/slot.js'
+export { reactiveProps } from './primitives/props.js'
 
 // =============================================================================
 // DEEP REACTIVITY
@@ -175,3 +176,4 @@ export type { LinkedSignalOptions, LinkedSignalConfig } from './primitives/linke
 export type { SelectorFn } from './primitives/selector.js'
 export type { EffectScope } from './primitives/scope.js'
 export type { Slot, SlotArray } from './primitives/slot.js'
+export type { PropInput, PropsInput, ReactiveProps } from './primitives/props.js'

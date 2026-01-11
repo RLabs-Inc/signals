@@ -375,6 +375,45 @@ textContent.setValue(inputIndex, 'alice')
 // username.value is now 'alice'!
 ```
 
+### reactiveProps
+
+Normalize component props to a consistent reactive interface. Accepts static values, getter functions, or signals - returns an object where every property is a DerivedSignal.
+
+```typescript
+reactiveProps<T>(rawProps: PropsInput<T>): ReactiveProps<T>
+```
+
+```typescript
+interface MyComponentProps {
+  name: string
+  count: number
+  active: boolean
+}
+
+function MyComponent(rawProps: PropsInput<MyComponentProps>) {
+  // Convert any mix of static/getter/signal props to consistent reactive interface
+  const props = reactiveProps(rawProps)
+
+  // Everything is now a DerivedSignal - consistent .value access
+  const greeting = derived(() => `Hello, ${props.name.value}!`)
+  const doubled = derived(() => props.count.value * 2)
+}
+
+// All of these work identically:
+MyComponent({ name: "world", count: 42, active: true })
+MyComponent({ name: () => getName(), count: countSignal, active: true })
+MyComponent({ name: nameSignal, count: () => getCount(), active: activeSignal })
+```
+
+**Why use reactiveProps?**
+
+| Without reactiveProps | With reactiveProps |
+|-----------------------|--------------------|
+| Consumer must know which props need getters | Consumer just passes values |
+| Component must handle multiple input types | Component always gets DerivedSignal |
+| Easy to forget `() =>` and get stale values | Props are always reactive |
+| Inconsistent patterns across components | One pattern everywhere |
+
 ---
 
 ## Advanced Features
