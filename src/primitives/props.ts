@@ -21,14 +21,14 @@ export type PropInput<T> = T | (() => T) | { readonly value: T }
 /**
  * The input type for reactiveProps - each property can be any PropInput
  */
-export type PropsInput<T extends Record<string, unknown>> = {
+export type PropsInput<T> = {
   [K in keyof T]: PropInput<T[K]>
 }
 
 /**
  * The output type - each property is a DerivedSignal
  */
-export type ReactiveProps<T extends Record<string, unknown>> = {
+export type ReactiveProps<T> = {
   readonly [K in keyof T]: DerivedSignal<T[K]>
 }
 
@@ -63,7 +63,7 @@ export type ReactiveProps<T extends Record<string, unknown>> = {
  * MyComponent({ name: nameSignal, count: () => getCount() })
  * ```
  */
-export function reactiveProps<T extends Record<string, unknown>>(
+export function reactiveProps<T>(
   rawProps: PropsInput<T>
 ): ReactiveProps<T> {
   const result = {} as ReactiveProps<T>

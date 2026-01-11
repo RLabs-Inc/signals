@@ -1,6 +1,6 @@
 {
   "name": "@rlabs-inc/signals",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Production-grade fine-grained reactivity for TypeScript. A complete standalone mirror of Svelte 5's reactivity system - signals, effects, derived values, deep reactivity, reactive collections, reactive bindings, and reactive slots.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
