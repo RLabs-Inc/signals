@@ -19,7 +19,41 @@ import { derived } from './derived.js'
 export type PropInput<T> = T | (() => T) | { readonly value: T }
 
 /**
+ * Extract the inner type from a PropInput.
+ *
+ * @example
+ * ```ts
+ * type A = UnwrapPropInput<PropInput<string>>  // string
+ * type B = UnwrapPropInput<string>             // string
+ * type C = UnwrapPropInput<() => number>       // number
+ * type D = UnwrapPropInput<Signal<boolean>>    // boolean
+ * ```
+ */
+export type UnwrapPropInput<P> =
+  P extends () => infer T ? T :
+  P extends { readonly value: infer T } ? T :
+  P
+
+/**
+ * Unwrap all properties of an object from PropInput to their inner types.
+ *
+ * @example
+ * ```ts
+ * interface MyProps {
+ *   name: PropInput<string>
+ *   count: PropInput<number>
+ * }
+ * type Resolved = UnwrapPropInputs<MyProps>
+ * // { name: string; count: number }
+ * ```
+ */
+export type UnwrapPropInputs<T> = {
+  [K in keyof T]: UnwrapPropInput<T[K]>
+}
+
+/**
  * The input type for reactiveProps - each property can be any PropInput
+ * @deprecated Use the props interface directly with PropInput<T> types
  */
 export type PropsInput<T> = {
   [K in keyof T]: PropInput<T[K]>
@@ -47,9 +81,17 @@ export type ReactiveProps<T> = {
  * Returns an object where every property is a DerivedSignal,
  * providing consistent `.value` access regardless of input type.
  *
+ * **Type inference is automatic** - no need to specify the resolved type!
+ *
  * @example
  * ```ts
- * function MyComponent(rawProps: { name: PropInput<string>, count: PropInput<number> }) {
+ * interface MyComponentProps {
+ *   name: PropInput<string>
+ *   count: PropInput<number>
+ * }
+ *
+ * function MyComponent(rawProps: MyComponentProps) {
+ *   // TypeScript infers: { name: DerivedSignal<string>, count: DerivedSignal<number> }
  *   const props = reactiveProps(rawProps)
  *
  *   // Everything is now consistently reactive
@@ -63,10 +105,10 @@ export type ReactiveProps<T> = {
  * MyComponent({ name: nameSignal, count: () => getCount() })
  * ```
  */
-export function reactiveProps<T>(
-  rawProps: PropsInput<T>
-): ReactiveProps<T> {
-  const result = {} as ReactiveProps<T>
+export function reactiveProps<T extends object>(
+  rawProps: T
+): ReactiveProps<UnwrapPropInputs<T>> {
+  const result = {} as ReactiveProps<UnwrapPropInputs<T>>
 
   for (const key in rawProps) {
     const prop = rawProps[key]
@@ -83,14 +125,14 @@ export function reactiveProps<T>(
  * Handles static values, getter functions, and signal-like objects.
  */
 function unwrapProp<T>(prop: PropInput<T>): T {
+  // Getter function - call it (check first since functions are objects)
+  if (typeof prop === 'function') {
+    return (prop as () => T)()
+  }
+
   // Signal-like object with .value - read it
   if (prop !== null && typeof prop === 'object' && 'value' in prop) {
     return (prop as { readonly value: T }).value
-  }
-
-  // Getter function - call it
-  if (typeof prop === 'function') {
-    return (prop as () => T)()
   }
 
   // Static value - return as-is
