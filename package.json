@@ -63,7 +63,5 @@
     "mitata": "^1.0.34",
     "typescript": "^5"
   },
-  "dependencies": {
-    "@rlabs-inc/signals": "^1.7.0"
-  }
+  "dependencies": {}
 }
