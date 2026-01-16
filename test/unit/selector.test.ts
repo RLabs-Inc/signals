@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { signal, createSelector, effect, derived, flushSync } from '../../src/index.js'
+import { signal, createSelector, effect, derived, flushSync, batch } from '../../src/index.js'
 
 describe('createSelector', () => {
   describe('basic functionality', () => {
@@ -253,7 +253,7 @@ describe('createSelector', () => {
       expect(isSelected(1)).toBe(true)
     })
 
-    it('handles rapid selection changes', () => {
+    it('runs effects synchronously for each selection change', () => {
       const selectedId = signal(0)
       const isSelected = createSelector(() => selectedId.value)
 
@@ -267,14 +267,40 @@ describe('createSelector', () => {
       flushSync()
       runs.length = 0
 
-      // Rapid changes
-      selectedId.value = 1
-      selectedId.value = 2
-      selectedId.value = 3
-      flushSync()
+      // Each write triggers effects synchronously (createSelector uses effect.sync internally)
+      selectedId.value = 1  // 0 deselected, 1 selected
+      selectedId.value = 2  // 1 deselected, 2 selected
+      selectedId.value = 3  // 2 deselected, 3 selected
 
-      // After flush, only effects for 0 (was selected) and 3 (now selected) run
-      // (intermediates are batched)
+      // All affected effects ran
+      expect(runs.sort()).toEqual([0, 1, 1, 2, 2, 3])
+
+      disposers.forEach(d => d())
+    })
+
+    it('coalesces rapid changes with batch()', () => {
+      const selectedId = signal(0)
+      const isSelected = createSelector(() => selectedId.value)
+
+      const runs: number[] = []
+      const disposers = [0, 1, 2, 3].map(id =>
+        effect(() => {
+          isSelected(id)
+          runs.push(id)
+        })
+      )
+      flushSync()
+      runs.length = 0
+
+      // Batch coalesces writes - only final state triggers effects
+      batch(() => {
+        selectedId.value = 1
+        selectedId.value = 2
+        selectedId.value = 3
+      })
+      flushSync()  // Flush deferred effects
+
+      // Only effects for 0 (was selected) and 3 (now selected) run
       expect(runs.sort()).toEqual([0, 3])
 
       disposers.forEach(d => d())

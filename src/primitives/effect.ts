@@ -275,14 +275,35 @@ export function effect(fn: EffectFn): DisposeFn {
 }
 
 /**
- * Create a pre-effect that runs synchronously before the main effects
- * Similar to Svelte's $effect.pre()
+ * Create a synchronous effect that runs immediately when dependencies change.
+ * Unlike regular effect() which batches via microtask, sync effects execute
+ * immediately after each signal write for predictable timing.
+ *
+ * Use when you need:
+ * - Predictable execution order (debugging, testing)
+ * - Immediate side effects after signal writes
+ * - Sequential logic where timing matters
+ *
+ * For best performance with multiple writes, combine with batch():
+ * @example
+ * ```ts
+ * const count = signal(0)
+ * effect.sync(() => console.log(count.value)) // Runs immediately on each change
+ *
+ * batch(() => {
+ *   count.value = 1
+ *   count.value = 2
+ *   count.value = 3
+ * }) // Effect runs once with final value (3)
+ * ```
  */
-effect.pre = function effectPre(fn: EffectFn): DisposeFn {
+effect.sync = function effectSync(fn: EffectFn): DisposeFn {
   const eff = createEffect(RENDER_EFFECT | USER_EFFECT, fn, true)
-
   return () => destroyEffect(eff)
 }
+
+/** @deprecated Use effect.sync() instead */
+effect.pre = effect.sync
 
 /**
  * Create a root effect scope

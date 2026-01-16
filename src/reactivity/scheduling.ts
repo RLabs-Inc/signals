@@ -4,7 +4,7 @@
 // ============================================================================
 
 import type { Reaction, Effect } from '../core/types.js'
-import { ROOT_EFFECT, BRANCH_EFFECT, CLEAN, INERT } from '../core/constants.js'
+import { ROOT_EFFECT, BRANCH_EFFECT, CLEAN, INERT, RENDER_EFFECT } from '../core/constants.js'
 import {
   batchDepth,
   addPendingReaction,
@@ -56,9 +56,13 @@ export function scheduleEffect(reaction: Reaction): void {
   // Queue the root effect
   addQueuedRootEffect(effect)
 
-  // Schedule microtask to flush if not already flushing
+  // Sync effects (RENDER_EFFECT) flush immediately, async effects use microtask
   if (!isFlushingSync) {
-    queueMicrotask(flushEffects)
+    if ((reaction.f & RENDER_EFFECT) !== 0) {
+      flushSync()
+    } else {
+      queueMicrotask(flushEffects)
+    }
   }
 }
 
