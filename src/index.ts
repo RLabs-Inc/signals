@@ -26,6 +26,7 @@ export { linkedSignal, isLinkedSignal } from './primitives/linked.js'
 export { createSelector } from './primitives/selector.js'
 export { effectScope, getCurrentScope, onScopeDispose } from './primitives/scope.js'
 export { slot, slotArray, isSlot, hasSlot } from './primitives/slot.js'
+export { trackedSlotArray } from './primitives/tracked-slot.js'
 export { reactiveProps } from './primitives/props.js'
 
 // =============================================================================

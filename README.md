@@ -81,6 +81,7 @@ flushSync()  // Logs: "Count: 5, Doubled: 10"
   - [bind](#bind)
   - [slot](#slot)
   - [slotArray](#slotarray)
+  - [trackedSlotArray](#trackedslotarray)
   - [reactiveProps](#reactiveprops)
 - [Deep Reactivity](#deep-reactivity)
 - [Utilities](#utilities)
@@ -545,6 +546,60 @@ const rawSlot = textContent.slot(0)
 | `arr.slot(i)` | Get the raw Slot at index |
 | `arr.ensureCapacity(n)` | Expand to at least n slots |
 | `arr.clear(i)` | Reset slot i to default |
+
+### trackedSlotArray
+
+Create an array of slots with automatic dirty tracking - perfect for incremental computation and ECS-style architectures.
+
+```typescript
+trackedSlotArray<T>(defaultValue?: T, dirtySet: ReactiveSet<number>): SlotArray<T>
+```
+
+```typescript
+const dirty = new ReactiveSet<number>()
+const positions = trackedSlotArray({ x: 0, y: 0 }, dirty)
+
+// Set source - automatically marks index as dirty
+positions.setSource(0, signal({ x: 10, y: 20 }))  // dirty.has(0) === true
+
+// setValue also marks dirty
+positions.setValue(5, { x: 100, y: 200 })  // dirty.has(5) === true
+
+// Use dirty tracking for O(1) skips
+const layout = derived(() => {
+  if (dirty.size === 0) return cachedLayout  // Nothing changed!
+  
+  // Process only dirty indices
+  for (const index of dirty) {
+    updateLayout(index, positions[index])
+  }
+  
+  dirty.clear()
+  return computedLayout
+})
+```
+
+**Three-level reactivity:**
+
+1. **Per-index tracking** - `dirty.has(5)` only subscribes to index 5
+2. **Size tracking** - `dirty.size` tracks count of dirty indices (perfect for "anything changed?" checks)
+3. **Version tracking** - Iterating `for (const i of dirty)` tracks structural changes
+
+**Use cases:**
+
+- **ECS systems** - Track which entities changed, skip unchanged ones
+- **Layout engines** - Recompute only components with changed properties
+- **Incremental compilation** - Track which modules changed
+- **Dirty checking** - Skip expensive computations when nothing changed
+
+**Comparison with slotArray:**
+
+| Feature | slotArray | trackedSlotArray |
+|---------|-----------|------------------|
+| Basic functionality | ✅ | ✅ |
+| Automatic dirty tracking | ❌ | ✅ |
+| O(1) skip optimization | ❌ | ✅ |
+| Drop-in replacement | - | ✅ (just add dirtySet param) |
 
 ### reactiveProps
 
