@@ -82,6 +82,8 @@ flushSync()  // Logs: "Count: 5, Doubled: 10"
   - [slot](#slot)
   - [slotArray](#slotarray)
   - [trackedSlotArray](#trackedslotarray)
+  - [typedSlotArray](#typedslotarray)
+  - [typedSlotArrayGroup](#typedslotarraygroup)
   - [reactiveProps](#reactiveprops)
 - [Deep Reactivity](#deep-reactivity)
 - [Utilities](#utilities)
@@ -600,6 +602,83 @@ const layout = derived(() => {
 | Automatic dirty tracking | ❌ | ✅ |
 | O(1) skip optimization | ❌ | ✅ |
 | Drop-in replacement | - | ✅ (just add dirtySet param) |
+
+### typedSlotArray
+
+TypedArray-backed reactive slots for zero-copy FFI integration. The `.buffer` property provides direct access to the underlying TypedArray for passing to native code (Rust NAPI, Zig FFI, WebAssembly).
+
+```typescript
+typedSlotArray<T extends TypedArrayConstructor>(
+  ArrayType: T,
+  capacity: number,
+  dirtySet?: ReactiveSet<number>,
+  defaultValue?: number
+): TypedSlotArray<T>
+```
+
+```typescript
+const dirty = new ReactiveSet<number>()
+const positions = typedSlotArray(Float32Array, 1024, dirty, 0)
+
+// Bind reactive sources
+positions.setSource(0, xSignal)
+positions.setSource(1, () => computeY())
+
+// Sync reactive values to buffer
+positions.sync()
+
+// Pass directly to FFI - zero copy!
+nativeLayout(positions.buffer)  // Float32Array
+```
+
+**Key features:**
+- **Zero-copy FFI** - `.buffer` is the actual TypedArray, pass directly to native code
+- **Reactive binding** - `setSource()` binds signals/getters to indices
+- **Dirty tracking** - Automatically tracks which indices changed
+- **Manual sync** - Call `sync()` to flush reactive values to buffer
+
+### typedSlotArrayGroup
+
+Create multiple typedSlotArrays with shared dirty tracking. Perfect for ECS-style parallel arrays where you need to know which entities changed across all component arrays.
+
+```typescript
+typedSlotArrayGroup<Config>(
+  config: Config,
+  capacity: number,
+  dirtySet?: ReactiveSet<number>
+): TypedSlotArrayGroup<Config>
+```
+
+```typescript
+const dirty = new ReactiveSet<number>()
+const layout = typedSlotArrayGroup({
+  width: { type: Float32Array, defaultValue: NaN },
+  height: { type: Float32Array, defaultValue: NaN },
+  flexDirection: { type: Uint8Array, defaultValue: 0 },
+  visible: { type: Uint8Array, defaultValue: 1 },
+}, 1024, dirty)
+
+// Bind component props to arrays
+layout.arrays.width.setSource(componentIndex, props.width)
+layout.arrays.height.setSource(componentIndex, props.height)
+
+// In layout derived: sync all arrays and get dirty indices
+const dirtyIndices = layout.syncAndGetDirty()
+
+// Pass buffers to native layout engine
+nativeLayoutEngine(
+  new Uint32Array(dirtyIndices),
+  layout.arrays.width.buffer,
+  layout.arrays.height.buffer,
+  layout.arrays.flexDirection.buffer,
+  layout.arrays.visible.buffer
+)
+```
+
+**Use cases:**
+- **Native layout engines** - Taffy, Yoga via FFI
+- **Game engines** - ECS with native physics/rendering
+- **Data processing** - Pass parallel arrays to WASM/native
 
 ### reactiveProps
 

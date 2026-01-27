@@ -27,6 +27,7 @@ export { createSelector } from './primitives/selector.js'
 export { effectScope, getCurrentScope, onScopeDispose } from './primitives/scope.js'
 export { slot, slotArray, isSlot, hasSlot } from './primitives/slot.js'
 export { trackedSlotArray } from './primitives/tracked-slot.js'
+export { typedSlotArray, typedSlotArrayGroup } from './primitives/typed-slot.js'
 export { reactiveProps } from './primitives/props.js'
 
 // =============================================================================
@@ -177,4 +178,5 @@ export type { LinkedSignalOptions, LinkedSignalConfig } from './primitives/linke
 export type { SelectorFn } from './primitives/selector.js'
 export type { EffectScope } from './primitives/scope.js'
 export type { Slot, SlotArray } from './primitives/slot.js'
+export type { TypedSlotArray, TypedSlotArrayGroup, TypedArrayConfig, TypedArray, TypedArrayConstructor } from './primitives/typed-slot.js'
 export type { PropInput, PropsInput, ReactiveProps, UnwrapPropInput, UnwrapPropInputs } from './primitives/props.js'

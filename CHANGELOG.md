@@ -5,6 +5,39 @@ All notable changes to @rlabs-inc/signals will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-01-26
+
+### Added
+
+- **`typedSlotArray`** - TypedArray-backed reactive slots for zero-copy FFI integration
+  - Direct TypedArray buffer access via `.buffer` property
+  - Per-index reactive tracking via signals
+  - Automatic dirty tracking via shared ReactiveSet
+  - `sync()` method flushes reactive sources to buffer
+  - Perfect for native FFI (Rust NAPI, Zig FFI, WebAssembly)
+  - Supports all TypedArray types: Float32Array, Int32Array, Uint8Array, etc.
+
+- **`typedSlotArrayGroup`** - Create multiple typedSlotArrays with shared dirty tracking
+  - Single ReactiveSet tracks changes across all arrays
+  - `syncAndGetDirty()` returns changed indices and clears dirty set
+  - Ideal for ECS-style parallel arrays with native layout engines
+  - Example usage:
+    ```typescript
+    const dirtySet = new ReactiveSet<number>()
+    const layout = typedSlotArrayGroup({
+      width: { type: Float32Array, defaultValue: 0 },
+      height: { type: Float32Array, defaultValue: 0 },
+      visible: { type: Uint8Array, defaultValue: 1 },
+    }, 1024, dirtySet)
+
+    // Bind reactive props
+    layout.arrays.width.setSource(0, widthSignal)
+
+    // In derived: sync and get dirty indices
+    const dirty = layout.syncAndGetDirty()
+    nativeLayoutEngine(dirty, layout.arrays.width.buffer, ...)
+    ```
+
 ## [1.10.0] - 2026-01-19
 
 ### Added
