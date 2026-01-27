@@ -67,6 +67,25 @@ export { ReactiveSet } from './collections/set.js'
 export { ReactiveDate } from './collections/date.js'
 
 // =============================================================================
+// SHARED MEMORY (for FFI bridges)
+// =============================================================================
+
+export {
+  ReactiveSharedFloat32Array,
+  ReactiveSharedUint8Array,
+  ReactiveSharedInt32Array,
+  ReactiveSharedUint32Array,
+  createSharedBufferContext,
+  notifyNative,
+  scheduleNotify,
+} from './shared/reactive-shared-array.js'
+
+export type {
+  SharedBufferContext,
+  ReactiveSharedArrayOptions,
+} from './shared/reactive-shared-array.js'
+
+// =============================================================================
 // LOW-LEVEL TRACKING API (for advanced use)
 // =============================================================================
 
