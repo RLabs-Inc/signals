@@ -85,6 +85,10 @@ flushSync()  // Logs: "Count: 5, Doubled: 10"
   - [typedSlotArray](#typedslotarray)
   - [typedSlotArrayGroup](#typedslotarraygroup)
   - [reactiveProps](#reactiveprops)
+- [Shared Memory](#shared-memory)
+  - [SharedSlotBuffer](#sharedslotbuffer)
+  - [Repeater](#repeater)
+  - [Notifier](#notifier)
 - [Deep Reactivity](#deep-reactivity)
 - [Utilities](#utilities)
 - [Reactive Collections](#reactive-collections)
@@ -717,6 +721,91 @@ MyComponent({ name: nameSignal, count: () => getCount(), active: activeSignal })
 | Consumer must know which props need getters | Consumer just passes values |
 | Component must handle multiple input types | Component always gets DerivedSignal |
 | Easy to forget `() =>` and get stale values | Props are always reactive |
+
+---
+
+## Shared Memory
+
+Cross-language reactive shared memory primitives. Three layers that connect independent reactive graphs (e.g., TypeScript and Rust) through SharedArrayBuffer with zero serialization.
+
+### SharedSlotBuffer
+
+Reactive typed arrays backed by shared memory. `get()` tracks dependencies, `set()` writes + notifies the reactive graph + notifies the other side.
+
+```typescript
+import { sharedSlotBuffer, sharedSlotBufferGroup, NoopNotifier } from '@rlabs-inc/signals'
+
+// Create a buffer backed by SharedArrayBuffer
+const sab = new SharedArrayBuffer(4096 * 4)
+const widths = sharedSlotBuffer({
+  buffer: new Float32Array(sab),
+  notifier: new NoopNotifier(), // or AtomicsNotifier for cross-thread
+})
+
+// Reactive read — tracks dependency in deriveds/effects
+const w = widths.get(0)
+
+// Write — updates shared memory + marks reactions dirty + notifies
+widths.set(0, 150.0)
+
+// Batch write — single notification at the end
+widths.setBatch([[0, 100], [1, 200], [2, 300]])
+
+// Direct TypedArray access for FFI
+nativeEngine(widths.raw) // Float32Array on SharedArrayBuffer
+
+// Create a group of buffers with shared dirty tracking
+const layout = sharedSlotBufferGroup({
+  width: { buffer: new Float32Array(sab, 0, 4096), notifier },
+  height: { buffer: new Float32Array(sab, 4096 * 4, 4096), notifier },
+})
+```
+
+### Repeater
+
+A new reactive graph primitive — NOT an effect, NOT a derived. A purpose-built forwarding node that runs **inline during `markReactions`** with zero scheduling overhead. ~40-50 bytes per binding (vs ~200+ for Effect).
+
+```typescript
+import { signal, repeat } from '@rlabs-inc/signals'
+
+const myWidth = signal(100)
+
+// Bind signal → buffer position
+// When myWidth changes, the repeater forwards the value inline
+const dispose = repeat(myWidth, widthBuffer, 0)
+
+// That's it. No effect scheduling, no microtask delay.
+// myWidth.value = 200 → buffer[0] is 200 during the same markReactions pass
+```
+
+**How it works:**
+```
+myWidth.value = 200
+  → markReactions(myWidth)
+    → encounters REPEATER node
+      → calls forward() INLINE (not scheduled)
+        → reads myWidth (already 200)
+        → writes buffer[0] = 200
+        → sets dirty flag
+        → notifier.notify() (batched)
+    → markReactions continues...
+```
+
+### Notifier
+
+Pluggable cross-side notification. Decouples the reactive system from the transport layer.
+
+```typescript
+import { AtomicsNotifier, NoopNotifier } from '@rlabs-inc/signals'
+
+// For cross-thread/cross-language communication
+const wakeFlag = new Int32Array(new SharedArrayBuffer(4))
+const notifier = new AtomicsNotifier(wakeFlag)
+// Multiple synchronous writes → single Atomics.notify via microtask batching
+
+// For testing (no-op)
+const silent = new NoopNotifier()
+```
 
 ---
 

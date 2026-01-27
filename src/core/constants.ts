@@ -73,6 +73,9 @@ export const DISCONNECTED = 1 << 9
 /** Effect is an inspect effect (for $inspect) */
 export const INSPECT_EFFECT = 1 << 18
 
+/** Reaction is a repeater (inline write-through forwarding node) */
+export const REPEATER = 1 << 19
+
 // =============================================================================
 // SENTINEL VALUES
 // =============================================================================

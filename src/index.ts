@@ -85,6 +85,17 @@ export type {
   ReactiveSharedArrayOptions,
 } from './shared/reactive-shared-array.js'
 
+// Shared Slot Buffer (Layer 1: reactive typed arrays over shared memory)
+export { sharedSlotBuffer, sharedSlotBufferGroup } from './shared/shared-slot-buffer.js'
+export type { SharedSlotBuffer, SharedSlotBufferOptions, SharedSlotBufferGroupConfig } from './shared/shared-slot-buffer.js'
+
+// Notifier (pluggable cross-side notification)
+export { AtomicsNotifier, NoopNotifier } from './shared/notifier.js'
+export type { Notifier } from './shared/notifier.js'
+
+// Repeater (Layer 2: inline write-through forwarding node)
+export { repeat } from './primitives/repeater.js'
+
 // =============================================================================
 // LOW-LEVEL TRACKING API (for advanced use)
 // =============================================================================
@@ -127,6 +138,9 @@ export {
   // Derived flags
   UNOWNED,
   DISCONNECTED,
+
+  // Repeater flag
+  REPEATER,
 
   // Sentinel values
   UNINITIALIZED,

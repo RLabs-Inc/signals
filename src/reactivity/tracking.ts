@@ -10,6 +10,7 @@ import {
   CLEAN,
   DERIVED,
   EFFECT,
+  REPEATER,
   REACTION_IS_UPDATING,
   STATUS_MASK,
 } from '../core/constants.js'
@@ -32,6 +33,7 @@ import {
   setActiveReaction,
 } from '../core/globals.js'
 import { scheduleEffect } from './scheduling.js'
+import { forwardRepeater } from '../primitives/repeater.js'
 
 // =============================================================================
 // GET - Read a signal value with dependency tracking
@@ -265,6 +267,12 @@ export function markReactions(signal: Source, status: number): void {
       if ((flags & DERIVED) !== 0) {
         // Push to stack instead of recursive call
         stack.push({ signal: reaction as unknown as Source, status: MAYBE_DIRTY })
+      } else if ((flags & REPEATER) !== 0) {
+        // Inline write-through for repeaters — runs during markReactions, not scheduled
+        if (notDirty) {
+          forwardRepeater(reaction)
+          setSignalStatus(reaction, CLEAN)
+        }
       } else if (notDirty) {
         // For effects, schedule them for execution
         scheduleEffect(reaction)
