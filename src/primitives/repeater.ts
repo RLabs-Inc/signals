@@ -14,8 +14,11 @@
 
 import type { Source, Reaction, ReadableSignal, WritableSignal, DerivedSignal } from '../core/types.js'
 import { REPEATER, CLEAN, DESTROYED } from '../core/constants.js'
-import { get } from '../reactivity/tracking.js'
+import { get, updateReaction, removeReactions } from '../reactivity/tracking.js'
 import type { SharedSlotBuffer } from '../shared/shared-slot-buffer.js'
+
+/** Global registry symbol — same key as signal.ts uses */
+const SOURCE_SYMBOL = Symbol.for('signal.source')
 
 // =============================================================================
 // REPEATER NODE
@@ -72,19 +75,6 @@ function resolveSource(input: RepeaterSource): {
   // These all have a .value getter that internally calls get(source)
   // We need the internal Source object to register our repeater
 
-  // The signal's internal source is accessible via the getSource pattern.
-  // Since we export `source()` and `getSource()` from signal.ts, and
-  // signal objects have the Source stored internally, we need to access it.
-  //
-  // The simplest approach: treat the input as something with a .value getter,
-  // and use get() to track. The readFn will call .value which does get(source).
-  //
-  // But we need the Source object to register the repeater in its reactions array.
-  // The internal source IS the object that has .reactions - we need to fish it out.
-  //
-  // For signals created with signal(), the WritableSignal object wraps a Source.
-  // We can use the SOURCE_KEY pattern or duck-type the internal source.
-
   // Duck-type: if it has .v, .reactions, .f — it IS a Source directly
   const maybeSource = input as unknown as Source<number>
   if (
@@ -99,13 +89,11 @@ function resolveSource(input: RepeaterSource): {
     }
   }
 
-  // It's a signal wrapper - we need to unwrap it.
-  // The signal() function creates a getter/setter wrapper around a Source.
-  // We can access the internal source using getSource from signal.ts.
-  // But we don't import that here to avoid circular deps.
-  //
-  // Fallback: use a lazy resolution approach. The readFn will use .value,
-  // and we'll find the source during the first read.
+  // Signal wrapper — extract internal Source via shared Symbol
+  const src = (input as unknown as Record<symbol, unknown>)[SOURCE_SYMBOL] as Source<number> | undefined
+  if (src && typeof src.f === 'number' && 'reactions' in src) {
+    return { source: src, readFn: () => get(src) }
+  }
 
   return null
 }
@@ -202,95 +190,54 @@ function repeatSource(
 
 /**
  * Create a repeater from a getter function.
- * We can't directly register with a Source, so we use an effect-like approach:
- * create a derived that tracks the getter, then repeat from that.
  *
- * Actually, for getters we take a simpler approach: we use the signal wrapper
- * pattern. The getter IS the readFn. But we need a Source to attach to.
- *
- * Solution: We create a lightweight "tracker source" that the getter's
- * internal signal reads will propagate to.
+ * Uses updateReaction() to discover deps during initial evaluation,
+ * then wires the repeater into all discovered sources' reactions.
+ * On subsequent changes, forwardRepeater() re-evaluates the getter inline.
  */
 function repeatGetter(
   getter: () => number,
   target: SharedSlotBuffer,
   index: number,
 ): () => void {
-  // For getters, we can't statically resolve the source.
-  // Instead, we'll do the initial call to discover which sources the getter reads,
-  // then attach the repeater to all of them.
-  //
-  // Simpler approach: use a wrapper Source that gets dirtied manually.
-  // The markReactions REPEATER branch calls readFn() which re-evaluates the getter.
-  //
-  // Even simpler: create a Source, and use an effect to update it from the getter.
-  // Then repeat from that source.
-  //
-  // Simplest for now: use the signal wrapper pattern from repeatSignalWrapper.
-  // The getter is essentially () => someSignal.value * 2, so it's like a derived.
-
-  // Create a proxy source that we'll keep in sync
-  const proxySource: Source<number> = {
-    f: CLEAN,
-    v: 0,
-    wv: 0,
-    rv: 0,
-    reactions: null,
-    equals: Object.is,
-  }
-
   const node: RepeaterNode = {
     f: REPEATER | CLEAN,
     wv: 0,
-    fn: null,
-    deps: [proxySource],
+    fn: getter,
+    deps: null,
     _readFn: getter,
     _target: target,
     _index: index,
   }
 
-  if (proxySource.reactions === null) {
-    proxySource.reactions = [node]
-  } else {
-    proxySource.reactions.push(node)
-  }
-
-  // Initial forward
-  target.set(index, getter())
-
-  // For getters, we need an effect to detect when the getter's deps change
-  // and dirty our proxy source. This is the one case where we can't avoid
-  // an effect-like mechanism. Import effect dynamically to avoid circular deps.
-  // TODO: optimize this path in the future
+  // Run getter with dependency tracking — discovers which sources it reads
+  // and registers the repeater in their reactions arrays
+  const initialValue = updateReaction(node) as number
+  target.set(index, initialValue)
 
   return () => {
     node.f |= DESTROYED
-    proxySource.reactions = null
+    removeReactions(node, 0)
+    node.deps = null
   }
 }
 
 /**
  * Create a repeater from a signal wrapper (WritableSignal/ReadableSignal).
- * These have a .value getter that reads from an internal Source.
- *
- * We use the getSource() helper if available, or fall back to
- * finding the Source via the _source property pattern.
+ * Extracts the internal Source via SOURCE_SYMBOL, falls back to getter tracking.
  */
 function repeatSignalWrapper(
   sig: ReadableSignal<number>,
   target: SharedSlotBuffer,
   index: number,
 ): () => void {
-  // Try to access internal source via known patterns
-  // Pattern 1: The signal object might have a _source or $source property
-  const internal = (sig as unknown as { _source?: Source<number> })._source ??
-                   (sig as unknown as { $source?: Source<number> }).$source
-
-  if (internal && typeof internal.f === 'number' && 'reactions' in internal) {
-    return repeatSource(internal, () => get(internal), target, index)
+  // Extract internal source via shared Symbol
+  const src = (sig as unknown as Record<symbol, unknown>)[SOURCE_SYMBOL] as Source<number> | undefined
+  if (src && typeof src.f === 'number' && 'reactions' in src) {
+    return repeatSource(src, () => get(src), target, index)
   }
 
-  // Pattern 2: Fall back to getter-based approach
+  // Non-standard signal — fall back to getter with dep tracking
   return repeatGetter(() => sig.value, target, index)
 }
 

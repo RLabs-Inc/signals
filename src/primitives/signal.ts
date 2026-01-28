@@ -12,7 +12,7 @@ import { get, set } from '../reactivity/tracking.js'
 // =============================================================================
 
 /** Symbol to access the internal Source from a signal wrapper */
-const SOURCE_SYMBOL = Symbol('signal.source')
+const SOURCE_SYMBOL = Symbol.for('signal.source')
 
 // =============================================================================
 // SOURCE (Internal Signal)
